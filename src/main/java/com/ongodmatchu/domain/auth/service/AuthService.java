@@ -1,0 +1,158 @@
+package com.ongodmatchu.domain.auth.service;
+
+import com.ongodmatchu.domain.auth.dto.EmailVerifyRequest;
+import com.ongodmatchu.domain.auth.dto.LoginRequest;
+import com.ongodmatchu.domain.auth.dto.SignupRequest;
+import com.ongodmatchu.domain.auth.dto.TokenResponse;
+import com.ongodmatchu.domain.auth.entity.EmailVerification;
+import com.ongodmatchu.domain.auth.entity.RefreshToken;
+import com.ongodmatchu.domain.auth.jwt.JwtProvider;
+import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
+import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
+import com.ongodmatchu.domain.user.entity.AuthProvider;
+import com.ongodmatchu.domain.user.entity.User;
+import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.global.exception.BusinessException;
+import com.ongodmatchu.global.exception.ErrorCode;
+import com.ongodmatchu.infra.mail.MailService;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
+import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+  private static final int VERIFICATION_EXPIRY_MINUTES = 5;
+
+  private final UserRepository userRepository;
+  private final EmailVerificationRepository emailVerificationRepository;
+  private final RefreshTokenRepository refreshTokenRepository;
+  private final JwtProvider jwtProvider;
+  private final PasswordEncoder passwordEncoder;
+  private final MailService mailService;
+
+  @Value("${jwt.refresh-token-expiry}")
+  private long refreshTokenExpiry;
+
+  @Transactional
+  public void signup(SignupRequest request) {
+    if (userRepository.existsByEmail(request.email())) {
+      throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+    }
+
+    User user =
+        User.builder()
+            .email(request.email())
+            .nickname(request.nickname())
+            .password(passwordEncoder.encode(request.password()))
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(false)
+            .build();
+    userRepository.save(user);
+
+    sendVerificationCode(request.email());
+  }
+
+  @Transactional
+  public void sendVerificationCode(String email) {
+    String code = generateCode();
+    emailVerificationRepository.deleteByEmail(email);
+    emailVerificationRepository.save(
+        EmailVerification.builder()
+            .email(email)
+            .code(code)
+            .expiresAt(LocalDateTime.now().plusMinutes(VERIFICATION_EXPIRY_MINUTES))
+            .build());
+    mailService.sendVerificationCode(email, code);
+  }
+
+  @Transactional
+  public void verifyEmail(EmailVerifyRequest request) {
+    EmailVerification verification =
+        emailVerificationRepository
+            .findTopByEmailOrderByCreatedAtDesc(request.email())
+            .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE));
+
+    if (verification.isExpired()) {
+      throw new BusinessException(ErrorCode.VERIFICATION_CODE_EXPIRED);
+    }
+    if (!verification.getCode().equals(request.code())) {
+      throw new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE);
+    }
+
+    verification.verify();
+
+    User user =
+        userRepository
+            .findByEmail(request.email())
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    user.verifyEmail();
+  }
+
+  @Transactional
+  public TokenResponse login(LoginRequest request) {
+    User user =
+        userRepository
+            .findByEmail(request.email())
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+    if (user.getProvider() != AuthProvider.LOCAL) {
+      throw new BusinessException(ErrorCode.SOCIAL_USER_PASSWORD_LOGIN);
+    }
+    if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+      throw new BusinessException(ErrorCode.INVALID_PASSWORD);
+    }
+    if (!user.isEmailVerified()) {
+      throw new BusinessException(ErrorCode.EMAIL_NOT_VERIFIED);
+    }
+
+    return issueTokens(user.getId());
+  }
+
+  @Transactional
+  public TokenResponse refresh(String refreshTokenValue) {
+    RefreshToken refreshToken =
+        refreshTokenRepository
+            .findByToken(refreshTokenValue)
+            .orElseThrow(() -> new BusinessException(ErrorCode.REFRESH_TOKEN_NOT_FOUND));
+
+    if (refreshToken.isExpired()) {
+      refreshTokenRepository.delete(refreshToken);
+      throw new BusinessException(ErrorCode.TOKEN_EXPIRED);
+    }
+
+    refreshTokenRepository.delete(refreshToken);
+    return issueTokens(refreshToken.getUserId());
+  }
+
+  @Transactional
+  public void logout(Long userId) {
+    refreshTokenRepository.deleteByUserId(userId);
+  }
+
+  private TokenResponse issueTokens(Long userId) {
+    String accessToken = jwtProvider.generateAccessToken(userId);
+    String refreshTokenValue = jwtProvider.generateRefreshToken(userId);
+
+    refreshTokenRepository.deleteByUserId(userId);
+    refreshTokenRepository.save(
+        RefreshToken.builder()
+            .userId(userId)
+            .token(refreshTokenValue)
+            .expiresAt(LocalDateTime.now().plusSeconds(refreshTokenExpiry / 1000))
+            .build());
+
+    return new TokenResponse(accessToken, refreshTokenValue);
+  }
+
+  private String generateCode() {
+    SecureRandom random = new SecureRandom();
+    int code = 100000 + random.nextInt(900000);
+    return String.valueOf(code);
+  }
+}
