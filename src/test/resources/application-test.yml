@@ -49,6 +49,13 @@ spring:
             user-info-uri: https://kapi.kakao.com/v2/user/me
             user-name-attribute: id
 
+aws:
+  access-key: test-access-key
+  secret-key: test-secret-key
+  region: ap-northeast-2
+  s3:
+    bucket: test-bucket
+
 jwt:
   secret: dV4fU4pt2Kt/p7SoR81YZAQvpI8trodE1J24rYxCrNw=
   access-token-expiry: 1800000

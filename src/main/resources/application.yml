@@ -64,6 +64,13 @@ jwt:
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
 
+aws:
+  access-key: ${AWS_ACCESS_KEY}
+  secret-key: ${AWS_SECRET_KEY}
+  region: ${AWS_REGION:ap-northeast-2}
+  s3:
+    bucket: ${AWS_S3_BUCKET}
+
 ai:
   claude:
     api-key: ${CLAUDE_API_KEY:}
