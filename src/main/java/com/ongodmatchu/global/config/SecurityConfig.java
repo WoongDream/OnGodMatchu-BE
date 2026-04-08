@@ -47,6 +47,8 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/quizzes/**")
                     .permitAll()
+                    .requestMatchers(HttpMethod.POST, "/api/quizzes/*/play", "/api/quizzes/grade")
+                    .permitAll()
                     .anyRequest()
                     .authenticated())
         .oauth2Login(

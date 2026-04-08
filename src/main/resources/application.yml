@@ -63,3 +63,7 @@ jwt:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+
+ai:
+  claude:
+    api-key: ${CLAUDE_API_KEY:}
