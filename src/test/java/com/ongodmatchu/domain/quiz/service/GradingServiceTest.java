@@ -27,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
+@DisplayName("GradingService")
 class GradingServiceTest {
 
   @InjectMocks private GradingService gradingService;
@@ -101,5 +102,41 @@ class GradingServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.QUESTION_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("단일 문자 대소문자 무시 — 정답 처리")
+  void grade_singleChar_caseInsensitive() {
+    given(questionRepository.findById(1L)).willReturn(Optional.of(testQuestion("A")));
+
+    GradeResponse result = gradingService.grade(new GradeRequest(1L, "a"));
+
+    assertThat(result.correct()).isTrue();
+    then(aiGradingService).should(never()).grade(anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("긴 문자열 완전 일치 — AI 호출 없이 정답 처리")
+  void grade_longString_exactMatch() {
+    String longAnswer = "서울은 대한민국의 수도이며 한반도의 중서부에 위치한 대도시입니다";
+    given(questionRepository.findById(1L)).willReturn(Optional.of(testQuestion(longAnswer)));
+
+    GradeResponse result = gradingService.grade(new GradeRequest(1L, "  " + longAnswer + "  "));
+
+    assertThat(result.correct()).isTrue();
+    assertThat(result.correctAnswer()).isEqualTo(longAnswer);
+    then(aiGradingService).should(never()).grade(anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("응답에 정답 포함 — GradeResponse 검증")
+  void grade_responseContent() {
+    given(questionRepository.findById(1L)).willReturn(Optional.of(testQuestion("정답")));
+    given(aiGradingService.grade("정답", "다른답")).willReturn(false);
+
+    GradeResponse result = gradingService.grade(new GradeRequest(1L, "다른답"));
+
+    assertThat(result.questionId()).isEqualTo(1L);
+    assertThat(result.correctAnswer()).isEqualTo("정답");
   }
 }
