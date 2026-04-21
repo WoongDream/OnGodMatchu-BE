@@ -35,6 +35,9 @@ out/
 ### VS Code ###
 .vscode/
 
+### Local only ###
+TODO.md
+
 ### Secrets ###
 application-local.yml
 *.env
