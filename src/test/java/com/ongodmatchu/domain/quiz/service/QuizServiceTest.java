@@ -5,7 +5,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.times;
 
+import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
@@ -23,6 +25,7 @@ import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -136,5 +139,65 @@ class QuizServiceTest {
     quizService.incrementPlayCount(1L);
 
     assertThat(quiz.getPlayCount()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("존재하지 않는 사용자로 퀴즈 생성 시 예외")
+  void createQuiz_userNotFound() {
+    given(userRepository.findById(99L)).willReturn(Optional.empty());
+
+    QuizCreateRequest request =
+        new QuizCreateRequest(
+            "새 퀴즈", "설명", "음악", null, List.of(new QuestionCreateRequest(null, "문제1", "정답1")));
+
+    assertThatThrownBy(() -> quizService.createQuiz(99L, request))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+    then(quizRepository).should(times(0)).save(any());
+    then(questionRepository).should(times(0)).save(any());
+  }
+
+  @Test
+  @DisplayName("여러 질문 포함 퀴즈 생성 시 orderNum이 순차적으로 부여됨")
+  void createQuiz_multipleQuestions() {
+    User user = testUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(quizRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+    given(questionRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+    QuizCreateRequest request =
+        new QuizCreateRequest(
+            "멀티 퀴즈",
+            "설명",
+            "음악",
+            null,
+            List.of(
+                new QuestionCreateRequest(null, "문제1", "정답1"),
+                new QuestionCreateRequest(null, "문제2", "정답2"),
+                new QuestionCreateRequest(null, "문제3", "정답3")));
+
+    quizService.createQuiz(1L, request);
+
+    ArgumentCaptor<Question> captor = ArgumentCaptor.forClass(Question.class);
+    then(questionRepository).should(times(3)).save(captor.capture());
+
+    List<Question> saved = captor.getAllValues();
+    assertThat(saved).hasSize(3);
+    assertThat(saved.get(0).getOrderNum()).isEqualTo(1);
+    assertThat(saved.get(1).getOrderNum()).isEqualTo(2);
+    assertThat(saved.get(2).getOrderNum()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("존재하지 않는 퀴즈 플레이 카운트 증가 시 예외")
+  void incrementPlayCount_quizNotFound() {
+    given(quizRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> quizService.incrementPlayCount(99L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
   }
 }

@@ -21,5 +21,8 @@ com.ongodmatchu/
 └── infra/    ← s3, mail, ai
 ```
 
+## Testing
+- Test code is written using the `unit-test-generator` agent
+
 ## References
 Conventions: `docs/conventions.md`
