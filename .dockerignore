@@ -1,0 +1,43 @@
+# Build outputs
+build/
+.gradle/
+out/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Environment files (절대 이미지에 포함되면 안 됨!)
+.env
+.env.*
+application-local.yml
+application-local.properties
+
+# Docker files
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# README & docs
+README.md
+*.md
+
+# CI/CD
+.github/
+
+# Misc
+HELP.md
