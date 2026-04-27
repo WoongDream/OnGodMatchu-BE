@@ -81,5 +81,6 @@ spotless {
 		removeUnusedImports()
 		trimTrailingWhitespace()
 		endWithNewline()
+		targetExclude("**/generated/**")
 	}
 }
