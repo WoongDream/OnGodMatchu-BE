@@ -81,76 +81,154 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_DEPLOY_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy to EC2 via SSM
+      - name: Create deployment script
         run: |
+          cat > deploy.sh << 'DEPLOY_EOF'
+          #!/bin/bash
+          set -e
+          
+          echo "=== Writing env file ==="
+          sudo mkdir -p /opt/ongodmatchu
+          sudo tee /opt/ongodmatchu/.env > /dev/null << ENV_EOF
+          SPRING_PROFILES_ACTIVE=__SPRING_PROFILES_ACTIVE__
+          DB_URL=__DB_URL__
+          DB_USERNAME=__DB_USERNAME__
+          DB_PASSWORD=__DB_PASSWORD__
+          JWT_SECRET=__JWT_SECRET__
+          MAIL_USERNAME=__MAIL_USERNAME__
+          MAIL_PASSWORD=__MAIL_PASSWORD__
+          AWS_ACCESS_KEY=__AWS_ACCESS_KEY__
+          AWS_SECRET_KEY=__AWS_SECRET_KEY__
+          AWS_S3_BUCKET=__AWS_S3_BUCKET__
+          CLAUDE_API_KEY=__CLAUDE_API_KEY__
+          FRONTEND_URL=__FRONTEND_URL__
+          GOOGLE_CLIENT_ID=__GOOGLE_CLIENT_ID__
+          GOOGLE_CLIENT_SECRET=__GOOGLE_CLIENT_SECRET__
+          NAVER_CLIENT_ID=__NAVER_CLIENT_ID__
+          NAVER_CLIENT_SECRET=__NAVER_CLIENT_SECRET__
+          KAKAO_CLIENT_ID=__KAKAO_CLIENT_ID__
+          KAKAO_CLIENT_SECRET=__KAKAO_CLIENT_SECRET__
+          ENV_EOF
+          sudo chmod 600 /opt/ongodmatchu/.env
+          
+          echo "=== Pulling latest image ==="
+          sudo docker pull ghcr.io/woongdream/ongodmatchu-be:latest
+          
+          echo "=== Stopping existing container ==="
+          sudo docker stop ongodmatchu-backend 2>/dev/null || true
+          sudo docker rm ongodmatchu-backend 2>/dev/null || true
+          
+          echo "=== Starting new container ==="
+          sudo docker run -d \
+            --name ongodmatchu-backend \
+            --restart unless-stopped \
+            --network host \
+            --memory=512m \
+            --memory-swap=1024m \
+            --env-file /opt/ongodmatchu/.env \
+            ghcr.io/woongdream/ongodmatchu-be:latest
+          
+          echo "=== Cleanup old images ==="
+          sudo docker image prune -f
+          
+          echo "=== Done ==="
+          DEPLOY_EOF
+          
+          # 환경변수 치환
+          sed -i "s|__SPRING_PROFILES_ACTIVE__|${{ secrets.SPRING_PROFILES_ACTIVE }}|g" deploy.sh
+          sed -i "s|__DB_URL__|${{ secrets.DB_URL }}|g" deploy.sh
+          sed -i "s|__DB_USERNAME__|${{ secrets.DB_USERNAME }}|g" deploy.sh
+          sed -i "s|__DB_PASSWORD__|${{ secrets.DB_PASSWORD }}|g" deploy.sh
+          sed -i "s|__JWT_SECRET__|${{ secrets.JWT_SECRET }}|g" deploy.sh
+          sed -i "s|__MAIL_USERNAME__|${{ secrets.MAIL_USERNAME }}|g" deploy.sh
+          sed -i "s|__MAIL_PASSWORD__|${{ secrets.MAIL_PASSWORD }}|g" deploy.sh
+          sed -i "s|__AWS_ACCESS_KEY__|${{ secrets.AWS_ACCESS_KEY }}|g" deploy.sh
+          sed -i "s|__AWS_SECRET_KEY__|${{ secrets.AWS_SECRET_KEY }}|g" deploy.sh
+          sed -i "s|__AWS_S3_BUCKET__|${{ secrets.AWS_S3_BUCKET }}|g" deploy.sh
+          sed -i "s|__CLAUDE_API_KEY__|${{ secrets.CLAUDE_API_KEY }}|g" deploy.sh
+          sed -i "s|__FRONTEND_URL__|${{ secrets.FRONTEND_URL }}|g" deploy.sh
+          sed -i "s|__GOOGLE_CLIENT_ID__|${{ secrets.GOOGLE_CLIENT_ID }}|g" deploy.sh
+          sed -i "s|__GOOGLE_CLIENT_SECRET__|${{ secrets.GOOGLE_CLIENT_SECRET }}|g" deploy.sh
+          sed -i "s|__NAVER_CLIENT_ID__|${{ secrets.NAVER_CLIENT_ID }}|g" deploy.sh
+          sed -i "s|__NAVER_CLIENT_SECRET__|${{ secrets.NAVER_CLIENT_SECRET }}|g" deploy.sh
+          sed -i "s|__KAKAO_CLIENT_ID__|${{ secrets.KAKAO_CLIENT_ID }}|g" deploy.sh
+          sed -i "s|__KAKAO_CLIENT_SECRET__|${{ secrets.KAKAO_CLIENT_SECRET }}|g" deploy.sh
+
+      - name: Send command to EC2 via SSM
+        run: |
+          # 스크립트를 base64로 인코딩 (특수문자 문제 회피)
+          ENCODED_SCRIPT=$(base64 -w 0 deploy.sh)
+          
+          # SSM 명령 실행
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy ongodmatchu backend - ${{ github.sha }}" \
-            --parameters '{
-              "commands": [
-                "set -e",
-                "echo \"=== Pulling latest image ===\"",
-                "sudo docker pull ghcr.io/woongdream/ongodmatchu-be:latest",
-                "echo \"=== Stopping existing container ===\"",
-                "sudo docker stop ongodmatchu-backend 2>/dev/null || true",
-                "sudo docker rm ongodmatchu-backend 2>/dev/null || true",
-                "echo \"=== Starting new container ===\"",
-                "sudo docker run -d \\",
-                "  --name ongodmatchu-backend \\",
-                "  --restart unless-stopped \\",
-                "  --network host \\",
-                "  --memory=512m \\",
-                "  --memory-swap=1024m \\",
-                "  -e SPRING_PROFILES_ACTIVE='\"'\"'${{ secrets.SPRING_PROFILES_ACTIVE }}'\"'\"' \\",
-                "  -e DB_URL='\"'\"'${{ secrets.DB_URL }}'\"'\"' \\",
-                "  -e DB_USERNAME='\"'\"'${{ secrets.DB_USERNAME }}'\"'\"' \\",
-                "  -e DB_PASSWORD='\"'\"'${{ secrets.DB_PASSWORD }}'\"'\"' \\",
-                "  -e JWT_SECRET='\"'\"'${{ secrets.JWT_SECRET }}'\"'\"' \\",
-                "  -e MAIL_USERNAME='\"'\"'${{ secrets.MAIL_USERNAME }}'\"'\"' \\",
-                "  -e MAIL_PASSWORD='\"'\"'${{ secrets.MAIL_PASSWORD }}'\"'\"' \\",
-                "  -e AWS_ACCESS_KEY='\"'\"'${{ secrets.AWS_ACCESS_KEY }}'\"'\"' \\",
-                "  -e AWS_SECRET_KEY='\"'\"'${{ secrets.AWS_SECRET_KEY }}'\"'\"' \\",
-                "  -e AWS_S3_BUCKET='\"'\"'${{ secrets.AWS_S3_BUCKET }}'\"'\"' \\",
-                "  -e CLAUDE_API_KEY='\"'\"'${{ secrets.CLAUDE_API_KEY }}'\"'\"' \\",
-                "  -e FRONTEND_URL='\"'\"'${{ secrets.FRONTEND_URL }}'\"'\"' \\",
-                "  -e GOOGLE_CLIENT_ID='\"'\"'${{ secrets.GOOGLE_CLIENT_ID }}'\"'\"' \\",
-                "  -e GOOGLE_CLIENT_SECRET='\"'\"'${{ secrets.GOOGLE_CLIENT_SECRET }}'\"'\"' \\",
-                "  -e NAVER_CLIENT_ID='\"'\"'${{ secrets.NAVER_CLIENT_ID }}'\"'\"' \\",
-                "  -e NAVER_CLIENT_SECRET='\"'\"'${{ secrets.NAVER_CLIENT_SECRET }}'\"'\"' \\",
-                "  -e KAKAO_CLIENT_ID='\"'\"'${{ secrets.KAKAO_CLIENT_ID }}'\"'\"' \\",
-                "  -e KAKAO_CLIENT_SECRET='\"'\"'${{ secrets.KAKAO_CLIENT_SECRET }}'\"'\"' \\",
-                "  ghcr.io/woongdream/ongodmatchu-be:latest",
-                "echo \"=== Cleanup old images ===\"",
-                "sudo docker image prune -f",
-                "echo \"=== Done ===\""
-              ]
-            }' \
+            --parameters "commands=[\"echo $ENCODED_SCRIPT | base64 -d > /tmp/deploy.sh && chmod +x /tmp/deploy.sh && /tmp/deploy.sh\"]" \
             --output text \
             --query "Command.CommandId")
           
           echo "Command ID: $COMMAND_ID"
-          
-          # 명령 완료 대기
+          echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
+
+      - name: Wait for command to finish
+        run: |
           echo "Waiting for deployment to finish..."
-          aws ssm wait command-executed \
-            --command-id "$COMMAND_ID" \
-            --instance-id "${{ secrets.EC2_INSTANCE_ID }}"
+          
+          # 최대 5분 대기
+          for i in {1..30}; do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${{ env.COMMAND_ID }}" \
+              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --query "Status" \
+              --output text 2>/dev/null || echo "Pending")
+          
+            echo "Status: $STATUS (attempt $i/30)"
+          
+            if [ "$STATUS" = "Success" ]; then
+              echo "✅ Command succeeded"
+              break
+            elif [ "$STATUS" = "Failed" ] || [ "$STATUS" = "Cancelled" ] || [ "$STATUS" = "TimedOut" ]; then
+              echo "❌ Command failed with status: $STATUS"
+              break
+            fi
+          
+            sleep 10
+          done
           
           # 결과 출력
+          echo "=== Command output ==="
           aws ssm get-command-invocation \
-            --command-id "$COMMAND_ID" \
+            --command-id "${{ env.COMMAND_ID }}" \
             --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
-            --query "{Status:Status,StandardOutputContent:StandardOutputContent,StandardErrorContent:StandardErrorContent}" \
-            --output table
+            --query "StandardOutputContent" \
+            --output text
+          
+          echo "=== Command errors (if any) ==="
+          aws ssm get-command-invocation \
+            --command-id "${{ env.COMMAND_ID }}" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --query "StandardErrorContent" \
+            --output text
+          
+          # 최종 상태 확인
+          FINAL_STATUS=$(aws ssm get-command-invocation \
+            --command-id "${{ env.COMMAND_ID }}" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --query "Status" \
+            --output text)
+          
+          if [ "$FINAL_STATUS" != "Success" ]; then
+            exit 1
+          fi
 
       - name: Health check
         run: |
           echo "Waiting for app to start..."
           sleep 30
           
-          for i in {1..10}; do
-            echo "Attempt $i..."
+          for i in {1..15}; do
+            echo "Attempt $i/15..."
             if curl -fsSL https://api.ongodmatchu.com/api/health; then
               echo ""
               echo "✅ Deployment successful!"
@@ -160,4 +238,4 @@ jobs:
           done
           
           echo "❌ Health check failed"
-          exit 1경
+          exit 1
