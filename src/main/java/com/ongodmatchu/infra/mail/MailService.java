@@ -25,8 +25,9 @@ public class MailService {
       message.setSubject("[OnGodMatchu] 이메일 인증 코드");
       message.setText("인증 코드: " + code + "\n\n5분 이내에 입력해주세요.");
       mailSender.send(message);
+      log.info("[MailService] 메일 발송 성공 — to: {}", to);
     } catch (Exception e) {
-      log.warn("[MailService] 메일 발송 실패 — 로컬 확인용 코드: {} (to: {}), 원인: {}", code, to, e.getMessage());
+      log.warn("[MailService] 메일 발송 실패 — to: {}, 원인: {}", to, e.getMessage(), e);
     }
   }
 }
