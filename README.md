@@ -2,7 +2,9 @@
 
 이미지/텍스트 기반 주관식 퀴즈를 만들고 공유하는 서비스의 백엔드 서버.
 
-> 프론트엔드: [WoongDream/OnGodMatchu](https://github.com/WoongDream/OnGodMatchu)
+> 프론트엔드: [WoongDream/OnGodMatchu-FE](https://github.com/WoongDream/OnGodMatchu-FE)  
+> 운영 도메인: [api.ongodmatchu.com](https://api.ongodmatchu.com)  
+> 배포 가이드: [DEPLOYMENT.md](./DEPLOYMENT.md)
 
 ## 기술 스택
 
