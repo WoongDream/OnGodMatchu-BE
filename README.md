@@ -4,7 +4,7 @@
 
 > 프론트엔드: [WoongDream/OnGodMatchu-FE](https://github.com/WoongDream/OnGodMatchu-FE)  
 > 운영 도메인: [api.ongodmatchu.com](https://api.ongodmatchu.com)  
-> 배포 가이드: [DEPLOYMENT.md](./DEPLOYMENT.md)
+> 배포 가이드: [DEPLOYMENT.md](./docs/deployment.md)
 
 ## 기술 스택
 
