@@ -1,16 +1,16 @@
 ---
-description: PR 생성 후 code-review 스킬로 자동 코드 리뷰 실행
+description: dev 브랜치로 PR 생성 (code-review 없음)
 ---
 
 Run the following steps in order:
 
-1. Run `git log main..HEAD --oneline` and `git diff main...HEAD` to review all changes that will go into the PR.
+1. Run `git log dev..HEAD --oneline` and `git diff dev...HEAD --stat` to review what will go into the PR. Only fetch full diff for specific files if needed for the title/body.
 
-2. Create a PR using `gh pr create` with:
-   - Title: concise description following `[type] 변경 내용` format (type: feat | fix | refactor | style | docs | chore | remove)
+2. Push current branch to origin if not already pushed: `git push -u origin HEAD`
+
+3. Create a PR using `gh pr create` with:
+   - Title: `[type] 변경 내용` (type: feat | fix | refactor | style | docs | chore | remove)
    - Body: bullet-point summary of what changed and why. Do NOT include any Claude or AI attribution text.
-   - Base branch: main
+   - Base branch: `dev`
 
-3. After the PR is created, note the PR number from the output.
-
-4. Run the `code-review` skill on the newly created PR number (use the Skill tool with skill: "code-review:code-review" and args: "PR #<number>")
+4. Output the PR URL.
