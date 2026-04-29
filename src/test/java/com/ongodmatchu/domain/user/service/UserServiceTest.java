@@ -2,9 +2,13 @@ package com.ongodmatchu.domain.user.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
+import static org.mockito.Mockito.never;
 
 import com.ongodmatchu.domain.user.dto.UserResponse;
+import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -143,5 +147,75 @@ class UserServiceTest {
     assertThatThrownBy(() -> userService.getMe(userId))
         .isInstanceOf(BusinessException.class)
         .hasMessage(ErrorCode.USER_NOT_FOUND.getMessage());
+  }
+
+  // ── updateMe ──────────────────────────────────────────────────────────────
+
+  @Test
+  @DisplayName("updateMe 정상: 새로운 닉네임으로 변경 후 UserResponse의 nickname이 새 값")
+  void updateMe_withNewNickname_returnsUpdatedUserResponse() {
+    // given
+    Long userId = 1L;
+    User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
+    UserUpdateRequest request = new UserUpdateRequest("새닉네임");
+    given(userRepository.findById(userId)).willReturn(Optional.of(user));
+    given(userRepository.existsByNickname("새닉네임")).willReturn(false);
+
+    // when
+    UserResponse response = userService.updateMe(userId, request);
+
+    // then
+    assertThat(response.nickname()).isEqualTo("새닉네임");
+  }
+
+  @Test
+  @DisplayName("updateMe 에러: existsByNickname이 true이면 NICKNAME_ALREADY_EXISTS BusinessException 발생")
+  void updateMe_withDuplicateNickname_throwsNicknameAlreadyExists() {
+    // given
+    Long userId = 1L;
+    User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
+    UserUpdateRequest request = new UserUpdateRequest("중복닉네임");
+    given(userRepository.findById(userId)).willReturn(Optional.of(user));
+    given(userRepository.existsByNickname("중복닉네임")).willReturn(true);
+
+    // when & then
+    assertThatThrownBy(() -> userService.updateMe(userId, request))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
+  }
+
+  @Test
+  @DisplayName("updateMe 정상: 본인 기존 닉네임과 동일하면 existsByNickname 호출 없이 통과")
+  void updateMe_withSameNickname_skipsExistsByNicknameCheck() {
+    // given
+    Long userId = 1L;
+    User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
+    UserUpdateRequest request = new UserUpdateRequest("기존닉네임");
+    given(userRepository.findById(userId)).willReturn(Optional.of(user));
+
+    // when
+    UserResponse response = userService.updateMe(userId, request);
+
+    // then
+    assertThat(response.nickname()).isEqualTo("기존닉네임");
+    then(userRepository).should(never()).existsByNickname(any());
+  }
+
+  @Test
+  @DisplayName(
+      "updateMe 에러: 존재하지 않는 userId이면 USER_NOT_FOUND BusinessException, existsByNickname 호출 없음")
+  void updateMe_withNonExistentUserId_throwsUserNotFound() {
+    // given
+    Long userId = 999L;
+    UserUpdateRequest request = new UserUpdateRequest("새닉네임");
+    given(userRepository.findById(userId)).willReturn(Optional.empty());
+
+    // when & then
+    assertThatThrownBy(() -> userService.updateMe(userId, request))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    then(userRepository).should(never()).existsByNickname(any());
   }
 }
