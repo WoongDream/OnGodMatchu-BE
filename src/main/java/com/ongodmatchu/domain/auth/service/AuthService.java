@@ -1,13 +1,14 @@
 package com.ongodmatchu.domain.auth.service;
 
-import com.ongodmatchu.domain.auth.dto.EmailVerifyRequest;
 import com.ongodmatchu.domain.auth.dto.LoginRequest;
 import com.ongodmatchu.domain.auth.dto.NicknameAvailabilityResponse;
 import com.ongodmatchu.domain.auth.dto.SignupRequest;
+import com.ongodmatchu.domain.auth.dto.SignupResponse;
 import com.ongodmatchu.domain.auth.dto.TokenResponse;
 import com.ongodmatchu.domain.auth.entity.EmailVerification;
 import com.ongodmatchu.domain.auth.entity.RefreshToken;
 import com.ongodmatchu.domain.auth.jwt.JwtProvider;
+import com.ongodmatchu.domain.auth.ratelimit.VerificationCodeRateLimiter;
 import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
@@ -43,14 +44,45 @@ public class AuthService {
   private final PasswordValidator passwordValidator;
   private final NicknameNormalizer nicknameNormalizer;
   private final NicknamePolicy nicknamePolicy;
+  private final VerificationCodeRateLimiter rateLimiter;
 
   @Value("${jwt.refresh-token-expiry}")
   private long refreshTokenExpiry;
 
   @Transactional
-  public void signup(SignupRequest request) {
+  public void requestVerificationCode(String email, String ipAddress) {
+    if (userRepository.existsByEmail(email)) {
+      throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+    }
+
+    rateLimiter.check(email, ipAddress);
+
+    String code = generateCode();
+    emailVerificationRepository.deleteByEmail(email);
+    emailVerificationRepository.save(
+        EmailVerification.builder()
+            .email(email)
+            .code(code)
+            .expiresAt(LocalDateTime.now().plusMinutes(VERIFICATION_EXPIRY_MINUTES))
+            .build());
+    mailService.sendVerificationCode(email, code);
+  }
+
+  @Transactional
+  public SignupResponse signup(SignupRequest request) {
     if (userRepository.existsByEmail(request.email())) {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+    }
+
+    EmailVerification verification =
+        emailVerificationRepository
+            .findTopByEmailOrderByCreatedAtDesc(request.email())
+            .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE));
+    if (verification.isExpired()) {
+      throw new BusinessException(ErrorCode.VERIFICATION_CODE_EXPIRED);
+    }
+    if (!verification.getCode().equals(request.code())) {
+      throw new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE);
     }
 
     String nickname = nicknameNormalizer.normalize(request.nickname());
@@ -67,7 +99,7 @@ public class AuthService {
             .nickname(nickname)
             .password(passwordEncoder.encode(request.password()))
             .provider(AuthProvider.LOCAL)
-            .emailVerified(false)
+            .emailVerified(true)
             .build();
     try {
       userRepository.saveAndFlush(user);
@@ -79,7 +111,9 @@ public class AuthService {
       throw e;
     }
 
-    sendVerificationCode(request.email());
+    emailVerificationRepository.deleteByEmail(request.email());
+
+    return SignupResponse.of(user, issueTokens(user.getId()));
   }
 
   @Transactional(readOnly = true)
@@ -93,42 +127,6 @@ public class AuthService {
           NicknameAvailabilityResponse.REASON_DUPLICATE);
     }
     return NicknameAvailabilityResponse.AVAILABLE;
-  }
-
-  @Transactional
-  public void sendVerificationCode(String email) {
-    String code = generateCode();
-    emailVerificationRepository.deleteByEmail(email);
-    emailVerificationRepository.save(
-        EmailVerification.builder()
-            .email(email)
-            .code(code)
-            .expiresAt(LocalDateTime.now().plusMinutes(VERIFICATION_EXPIRY_MINUTES))
-            .build());
-    mailService.sendVerificationCode(email, code);
-  }
-
-  @Transactional
-  public void verifyEmail(EmailVerifyRequest request) {
-    EmailVerification verification =
-        emailVerificationRepository
-            .findTopByEmailOrderByCreatedAtDesc(request.email())
-            .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE));
-
-    if (verification.isExpired()) {
-      throw new BusinessException(ErrorCode.VERIFICATION_CODE_EXPIRED);
-    }
-    if (!verification.getCode().equals(request.code())) {
-      throw new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE);
-    }
-
-    verification.verify();
-
-    User user =
-        userRepository
-            .findByEmail(request.email())
-            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-    user.verifyEmail();
   }
 
   @Transactional
