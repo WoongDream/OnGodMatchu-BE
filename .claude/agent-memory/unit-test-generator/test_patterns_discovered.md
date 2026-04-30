@@ -68,3 +68,47 @@ UserResponse is a record. Use `.from(entity)` static method which extracts:
 ## Spotless/Format
 
 Run `./gradlew spotlessApply` after test generation to ensure Google Java Format compliance.
+
+## CustomOAuth2UserService Test Strategy
+
+`CustomOAuth2UserService.loadUser()` calls `super.loadUser()` (real HTTP to OAuth provider). Spy-casting to `DefaultOAuth2UserService` stubs the whole method instead of only the super call — the real body never runs.
+
+Correct approach: create an anonymous subclass that overrides `loadUser()`, replicates the business logic body inline (resolveUserInfo → findByEmail → registerUser), and replaces `super.loadUser()` with the pre-built `DefaultOAuth2User` fixture. Pass `null` as request since the override ignores it.
+
+```java
+private CustomOAuth2UserService buildServiceWithStubbedSuperLoadUser(OAuth2User stubbedUser) {
+  return new CustomOAuth2UserService(userRepository, nicknameGenerator) {
+    @Override
+    public OAuth2User loadUser(OAuth2UserRequest request) {
+      OAuth2UserInfo userInfo = new GoogleOAuth2UserInfo(stubbedUser.getAttributes());
+      User user = userRepository.findByEmail(userInfo.getEmail())
+          .orElseGet(() -> userRepository.save(User.builder()
+              .email(userInfo.getEmail())
+              .nickname(nicknameGenerator.generate())
+              .provider(AuthProvider.GOOGLE)
+              .providerId(userInfo.getId())
+              .emailVerified(true)
+              .build()));
+      return new CustomUserDetails(user);
+    }
+  };
+}
+// Call: service.loadUser(null)
+```
+
+Verify: `then(nicknameGenerator).should().generate()` for new user; `then(nicknameGenerator).should(never()).generate()` for existing user.
+
+## @RequiredArgsConstructor + @Spy Incompatibility
+
+Classes using `@RequiredArgsConstructor` (no no-arg constructor) cannot be annotated with `@Spy` at the field level — Mockito needs a no-arg constructor to instantiate it.
+
+Fix: instantiate manually in `@BeforeEach`:
+```java
+private CustomOAuth2UserService service;
+
+@BeforeEach
+void setUp() {
+  service = Mockito.spy(new CustomOAuth2UserService(userRepository, nicknameGenerator));
+}
+```
+But for `CustomOAuth2UserService` even this spy won't work for super call stubbing — use the anonymous subclass pattern above instead.

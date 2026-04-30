@@ -2,6 +2,7 @@ package com.ongodmatchu.global.exception;
 
 import com.ongodmatchu.global.response.ApiResponse;
 import java.util.stream.Collectors;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -15,7 +16,17 @@ public class GlobalExceptionHandler {
   public ResponseEntity<ApiResponse<Void>> handleBusinessException(BusinessException e) {
     ErrorCode errorCode = e.getErrorCode();
     return ResponseEntity.status(errorCode.getStatus())
-        .body(ApiResponse.fail(errorCode.getCode(), errorCode.getMessage()));
+        .body(ApiResponse.fail(errorCode.getCode(), e.getMessage()));
+  }
+
+  @ExceptionHandler(RateLimitException.class)
+  public ResponseEntity<ApiResponse<Void>> handleRateLimitException(RateLimitException e) {
+    ErrorCode errorCode = ErrorCode.RATE_LIMITED;
+    return ResponseEntity.status(errorCode.getStatus())
+        .header(HttpHeaders.RETRY_AFTER, String.valueOf(e.getRetryAfterSeconds()))
+        .body(
+            ApiResponse.fail(
+                errorCode.getCode(), errorCode.getMessage(), e.getRetryAfterSeconds()));
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

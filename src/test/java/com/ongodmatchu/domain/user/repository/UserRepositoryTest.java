@@ -25,7 +25,7 @@ class UserRepositoryTest {
     User user =
         User.builder()
             .email("test@example.com")
-            .nickname("테스터")
+            .nickname("RepoTest_findByEmail")
             .password("hashed_password")
             .provider(AuthProvider.LOCAL)
             .emailVerified(false)
@@ -35,7 +35,7 @@ class UserRepositoryTest {
     Optional<User> found = userRepository.findByEmail("test@example.com");
 
     assertThat(found).isPresent();
-    assertThat(found.get().getNickname()).isEqualTo("테스터");
+    assertThat(found.get().getNickname()).isEqualTo("RepoTest_findByEmail");
   }
 
   @Test
@@ -44,7 +44,7 @@ class UserRepositoryTest {
     User user =
         User.builder()
             .email("dup@example.com")
-            .nickname("중복유저")
+            .nickname("RepoTest_existsByEmail")
             .provider(AuthProvider.LOCAL)
             .emailVerified(false)
             .build();
@@ -60,7 +60,7 @@ class UserRepositoryTest {
     User user =
         User.builder()
             .email("verify@example.com")
-            .nickname("인증유저")
+            .nickname("RepoTest_verifyEmail")
             .provider(AuthProvider.LOCAL)
             .emailVerified(false)
             .build();

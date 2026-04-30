@@ -1,17 +1,22 @@
 package com.ongodmatchu.domain.auth.service;
 
-import com.ongodmatchu.domain.auth.dto.EmailVerifyRequest;
 import com.ongodmatchu.domain.auth.dto.LoginRequest;
+import com.ongodmatchu.domain.auth.dto.NicknameAvailabilityResponse;
 import com.ongodmatchu.domain.auth.dto.SignupRequest;
+import com.ongodmatchu.domain.auth.dto.SignupResponse;
 import com.ongodmatchu.domain.auth.dto.TokenResponse;
 import com.ongodmatchu.domain.auth.entity.EmailVerification;
 import com.ongodmatchu.domain.auth.entity.RefreshToken;
 import com.ongodmatchu.domain.auth.jwt.JwtProvider;
+import com.ongodmatchu.domain.auth.ratelimit.VerificationCodeRateLimiter;
 import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
+import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
+import com.ongodmatchu.domain.user.validation.NicknamePolicy;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
 import com.ongodmatchu.infra.mail.MailService;
@@ -19,6 +24,7 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,31 +41,22 @@ public class AuthService {
   private final JwtProvider jwtProvider;
   private final PasswordEncoder passwordEncoder;
   private final MailService mailService;
+  private final PasswordValidator passwordValidator;
+  private final NicknameNormalizer nicknameNormalizer;
+  private final NicknamePolicy nicknamePolicy;
+  private final VerificationCodeRateLimiter rateLimiter;
 
   @Value("${jwt.refresh-token-expiry}")
   private long refreshTokenExpiry;
 
   @Transactional
-  public void signup(SignupRequest request) {
-    if (userRepository.existsByEmail(request.email())) {
+  public void requestVerificationCode(String email, String ipAddress) {
+    if (userRepository.existsByEmail(email)) {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
     }
 
-    User user =
-        User.builder()
-            .email(request.email())
-            .nickname(request.nickname())
-            .password(passwordEncoder.encode(request.password()))
-            .provider(AuthProvider.LOCAL)
-            .emailVerified(false)
-            .build();
-    userRepository.save(user);
+    rateLimiter.check(email, ipAddress);
 
-    sendVerificationCode(request.email());
-  }
-
-  @Transactional
-  public void sendVerificationCode(String email) {
     String code = generateCode();
     emailVerificationRepository.deleteByEmail(email);
     emailVerificationRepository.save(
@@ -72,12 +69,15 @@ public class AuthService {
   }
 
   @Transactional
-  public void verifyEmail(EmailVerifyRequest request) {
+  public SignupResponse signup(SignupRequest request) {
+    if (userRepository.existsByEmail(request.email())) {
+      throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
+    }
+
     EmailVerification verification =
         emailVerificationRepository
             .findTopByEmailOrderByCreatedAtDesc(request.email())
             .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE));
-
     if (verification.isExpired()) {
       throw new BusinessException(ErrorCode.VERIFICATION_CODE_EXPIRED);
     }
@@ -85,13 +85,48 @@ public class AuthService {
       throw new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE);
     }
 
-    verification.verify();
+    String nickname = nicknameNormalizer.normalize(request.nickname());
+    nicknamePolicy.enforce(nickname);
+    if (userRepository.existsByNickname(nickname)) {
+      throw new BusinessException(ErrorCode.NICKNAME_ALREADY_EXISTS);
+    }
+
+    passwordValidator.validate(request.password(), request.email(), nickname);
 
     User user =
-        userRepository
-            .findByEmail(request.email())
-            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-    user.verifyEmail();
+        User.builder()
+            .email(request.email())
+            .nickname(nickname)
+            .password(passwordEncoder.encode(request.password()))
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    try {
+      userRepository.saveAndFlush(user);
+    } catch (DataIntegrityViolationException e) {
+      String message = e.getMostSpecificCause().getMessage();
+      if (message != null && message.toLowerCase().contains("nickname")) {
+        throw new BusinessException(ErrorCode.NICKNAME_ALREADY_EXISTS);
+      }
+      throw e;
+    }
+
+    emailVerificationRepository.deleteByEmail(request.email());
+
+    return SignupResponse.of(user, issueTokens(user.getId()));
+  }
+
+  @Transactional(readOnly = true)
+  public NicknameAvailabilityResponse checkNicknameAvailability(String rawNickname) {
+    String nickname = nicknameNormalizer.normalize(rawNickname);
+    if (!nicknamePolicy.isValid(nickname)) {
+      return NicknameAvailabilityResponse.unavailable(NicknameAvailabilityResponse.REASON_FORMAT);
+    }
+    if (userRepository.existsByNickname(nickname)) {
+      return NicknameAvailabilityResponse.unavailable(
+          NicknameAvailabilityResponse.REASON_DUPLICATE);
+    }
+    return NicknameAvailabilityResponse.AVAILABLE;
   }
 
   @Transactional
@@ -135,7 +170,8 @@ public class AuthService {
     refreshTokenRepository.deleteByUserId(userId);
   }
 
-  private TokenResponse issueTokens(Long userId) {
+  @Transactional
+  public TokenResponse issueTokens(Long userId) {
     String accessToken = jwtProvider.generateAccessToken(userId);
     String refreshTokenValue = jwtProvider.generateRefreshToken(userId);
 

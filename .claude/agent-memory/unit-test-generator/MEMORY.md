@@ -3,3 +3,6 @@
 - [GradingService 테스트 패턴](codebase_patterns.md) — 완성된 테스트 (8개 케이스: exact match, AI 통합, 에러 처리)
 - [AuthService 테스트 패턴](test_patterns_auth_service.md) — ArgumentCaptor 사용법, ReflectionTestUtils, BDD Mockito 스타일
 - [UserService/JwtProvider 테스트 패턴](test_patterns_discovered.md) — Entity ID reflection, JWT setup, ErrorCode extraction, UserResponse pattern
+- [HibpClient RestClient 테스트 패턴](hibp_restclient_testing.md) — 생성자 내부에서 builder.build()하는 컴포넌트에 ReflectionTestUtils로 RestClient 교체
+- [WebMvcTest JPA Auditing 충돌](webmvctest_jpa_auditing.md) — @WebMvcTest 슬라이스에서 반드시 @MockitoBean JpaMetamodelMappingContext 선언
+- [Nickname 의존성 mock 패턴](nickname_validation_patterns.md) — UserService/AuthService 테스트에 NicknameNormalizer·NicknamePolicy mock 필수

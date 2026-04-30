@@ -6,22 +6,28 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
-import com.ongodmatchu.domain.auth.dto.EmailVerifyRequest;
 import com.ongodmatchu.domain.auth.dto.LoginRequest;
+import com.ongodmatchu.domain.auth.dto.NicknameAvailabilityResponse;
 import com.ongodmatchu.domain.auth.dto.SignupRequest;
+import com.ongodmatchu.domain.auth.dto.SignupResponse;
 import com.ongodmatchu.domain.auth.dto.TokenResponse;
 import com.ongodmatchu.domain.auth.entity.EmailVerification;
 import com.ongodmatchu.domain.auth.entity.RefreshToken;
 import com.ongodmatchu.domain.auth.jwt.JwtProvider;
+import com.ongodmatchu.domain.auth.ratelimit.VerificationCodeRateLimiter;
 import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
+import com.ongodmatchu.domain.user.validation.NicknamePolicy;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
+import com.ongodmatchu.global.exception.RateLimitException;
 import com.ongodmatchu.infra.mail.MailService;
 import java.time.LocalDateTime;
 import java.util.Optional;
@@ -32,6 +38,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -45,6 +52,69 @@ class AuthServiceTest {
   @Mock private JwtProvider jwtProvider;
   @Mock private PasswordEncoder passwordEncoder;
   @Mock private MailService mailService;
+  @Mock private com.ongodmatchu.domain.auth.validation.PasswordValidator passwordValidator;
+  @Mock private NicknameNormalizer nicknameNormalizer;
+  @Mock private NicknamePolicy nicknamePolicy;
+  @Mock private VerificationCodeRateLimiter rateLimiter;
+
+  private static EmailVerification validVerification(String email, String code) {
+    return EmailVerification.builder()
+        .email(email)
+        .code(code)
+        .expiresAt(LocalDateTime.now().plusMinutes(5))
+        .build();
+  }
+
+  // ============ requestVerificationCode Tests ============
+
+  @Test
+  @DisplayName("코드발송_이미가입된이메일_EMAIL_ALREADY_EXISTS")
+  void requestVerificationCode_alreadyRegistered_throws() {
+    given(userRepository.existsByEmail("dup@example.com")).willReturn(true);
+
+    assertThatThrownBy(() -> authService.requestVerificationCode("dup@example.com", "1.1.1.1"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
+
+    then(rateLimiter).should(never()).check(anyString(), anyString());
+    then(emailVerificationRepository).should(never()).save(any());
+    then(mailService).should(never()).sendVerificationCode(anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("코드발송_rate_limit_초과시_RateLimitException_저장및메일미발생")
+  void requestVerificationCode_rateLimited_throws() {
+    given(userRepository.existsByEmail("ok@example.com")).willReturn(false);
+    willThrow(new RateLimitException(42)).given(rateLimiter).check("ok@example.com", "1.1.1.1");
+
+    assertThatThrownBy(() -> authService.requestVerificationCode("ok@example.com", "1.1.1.1"))
+        .isInstanceOf(RateLimitException.class)
+        .extracting(e -> ((RateLimitException) e).getRetryAfterSeconds())
+        .isEqualTo(42L);
+
+    then(emailVerificationRepository).should(never()).save(any());
+    then(mailService).should(never()).sendVerificationCode(anyString(), anyString());
+  }
+
+  @Test
+  @DisplayName("코드발송_정상_기존행삭제_새행저장_메일발송")
+  void requestVerificationCode_success_deletesOldSavesNewSendsMail() {
+    given(userRepository.existsByEmail("new@example.com")).willReturn(false);
+
+    authService.requestVerificationCode("new@example.com", "1.2.3.4");
+
+    then(rateLimiter).should().check("new@example.com", "1.2.3.4");
+    then(emailVerificationRepository).should().deleteByEmail("new@example.com");
+
+    ArgumentCaptor<EmailVerification> captor = ArgumentCaptor.forClass(EmailVerification.class);
+    then(emailVerificationRepository).should().save(captor.capture());
+    EmailVerification saved = captor.getValue();
+    assertThat(saved.getCode()).matches("\\d{6}");
+    assertThat(saved.getEmail()).isEqualTo("new@example.com");
+
+    then(mailService).should().sendVerificationCode(anyString(), anyString());
+  }
 
   // ============ Signup Tests ============
 
@@ -54,184 +124,182 @@ class AuthServiceTest {
     given(userRepository.existsByEmail("dup@example.com")).willReturn(true);
 
     assertThatThrownBy(
-            () -> authService.signup(new SignupRequest("dup@example.com", "닉네임", "password123")))
+            () ->
+                authService.signup(
+                    new SignupRequest("dup@example.com", "닉네임", "password123", "123456")))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
 
-    then(userRepository).should(never()).save(any());
-    then(emailVerificationRepository).should(never()).save(any());
-    then(mailService).should(never()).sendVerificationCode(anyString(), anyString());
+    then(userRepository).should(never()).saveAndFlush(any());
   }
 
   @Test
-  @DisplayName("회원가입_정상_사용자저장_인증코드발송")
-  void signup_success_savesUserAndSendsVerificationCode() {
+  @DisplayName("회원가입_코드없음_INVALID_VERIFICATION_CODE")
+  void signup_noVerificationRecord_throws() {
     given(userRepository.existsByEmail("new@example.com")).willReturn(false);
-    given(passwordEncoder.encode("password123")).willReturn("hashed-password");
-
-    authService.signup(new SignupRequest("new@example.com", "새사용자", "password123"));
-
-    then(userRepository).should().save(any(User.class));
-    then(emailVerificationRepository).should().deleteByEmail("new@example.com");
-    then(emailVerificationRepository).should().save(any(EmailVerification.class));
-    then(mailService).should().sendVerificationCode(anyString(), anyString());
-  }
-
-  @Test
-  @DisplayName("회원가입_사용자_속성_검증")
-  void signup_success_userAttributesCorrect() {
-    given(userRepository.existsByEmail("test@example.com")).willReturn(false);
-    given(passwordEncoder.encode("password123")).willReturn("encoded-pass");
-
-    authService.signup(new SignupRequest("test@example.com", "테스트", "password123"));
-
-    ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-    then(userRepository).should().save(userCaptor.capture());
-
-    User savedUser = userCaptor.getValue();
-    assertThat(savedUser.getEmail()).isEqualTo("test@example.com");
-    assertThat(savedUser.getNickname()).isEqualTo("테스트");
-    assertThat(savedUser.getPassword()).isEqualTo("encoded-pass");
-    assertThat(savedUser.getProvider()).isEqualTo(AuthProvider.LOCAL);
-    assertThat(savedUser.isEmailVerified()).isFalse();
-  }
-
-  // ============ SendVerificationCode Tests ============
-
-  @Test
-  @DisplayName("인증코드발송_기존코드삭제_새코드저장")
-  void sendVerificationCode_deleteExistingAndSaveNew() {
-    authService.sendVerificationCode("test@example.com");
-
-    then(emailVerificationRepository).should().deleteByEmail("test@example.com");
-    then(emailVerificationRepository).should().save(any(EmailVerification.class));
-    then(mailService).should().sendVerificationCode(anyString(), anyString());
-  }
-
-  @Test
-  @DisplayName("인증코드발송_메일서비스호출")
-  void sendVerificationCode_callsMailService() {
-    authService.sendVerificationCode("user@example.com");
-
-    then(mailService).should().sendVerificationCode(anyString(), anyString());
-  }
-
-  @Test
-  @DisplayName("인증코드발송_코드형식_6자리숫자")
-  void sendVerificationCode_codeFormat6Digits() {
-    authService.sendVerificationCode("user@example.com");
-
-    ArgumentCaptor<EmailVerification> verificationCaptor =
-        ArgumentCaptor.forClass(EmailVerification.class);
-    then(emailVerificationRepository).should().save(verificationCaptor.capture());
-
-    EmailVerification savedVerification = verificationCaptor.getValue();
-    assertThat(savedVerification.getCode()).matches("\\d{6}");
-    assertThat(savedVerification.getCode()).hasSize(6);
-  }
-
-  // ============ VerifyEmail Tests ============
-
-  @Test
-  @DisplayName("이메일인증_코드미존재_예외발생")
-  void verifyEmail_noVerificationRecord_throwsException() {
-    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("nonexistent@example.com"))
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("new@example.com"))
         .willReturn(Optional.empty());
 
     assertThatThrownBy(
             () ->
-                authService.verifyEmail(
-                    new EmailVerifyRequest("nonexistent@example.com", "123456")))
+                authService.signup(
+                    new SignupRequest("new@example.com", "닉네임", "password123", "123456")))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
+
+    then(userRepository).should(never()).saveAndFlush(any());
   }
 
   @Test
-  @DisplayName("이메일인증_코드만료_예외발생")
-  void verifyEmail_expiredCode_throwsException() {
+  @DisplayName("회원가입_코드만료_VERIFICATION_CODE_EXPIRED")
+  void signup_expiredCode_throws() {
+    given(userRepository.existsByEmail("new@example.com")).willReturn(false);
     EmailVerification expired =
         EmailVerification.builder()
-            .email("test@example.com")
+            .email("new@example.com")
             .code("123456")
             .expiresAt(LocalDateTime.now().minusMinutes(1))
             .build();
-    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("test@example.com"))
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("new@example.com"))
         .willReturn(Optional.of(expired));
 
     assertThatThrownBy(
-            () -> authService.verifyEmail(new EmailVerifyRequest("test@example.com", "123456")))
+            () ->
+                authService.signup(
+                    new SignupRequest("new@example.com", "닉네임", "password123", "123456")))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.VERIFICATION_CODE_EXPIRED);
+
+    then(userRepository).should(never()).saveAndFlush(any());
   }
 
   @Test
-  @DisplayName("이메일인증_잘못된코드_예외발생")
-  void verifyEmail_wrongCode_throwsException() {
-    EmailVerification verification =
-        EmailVerification.builder()
-            .email("test@example.com")
-            .code("123456")
-            .expiresAt(LocalDateTime.now().plusMinutes(5))
-            .build();
-    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("test@example.com"))
-        .willReturn(Optional.of(verification));
+  @DisplayName("회원가입_코드불일치_INVALID_VERIFICATION_CODE")
+  void signup_wrongCode_throws() {
+    given(userRepository.existsByEmail("new@example.com")).willReturn(false);
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("new@example.com"))
+        .willReturn(Optional.of(validVerification("new@example.com", "123456")));
 
     assertThatThrownBy(
-            () -> authService.verifyEmail(new EmailVerifyRequest("test@example.com", "999999")))
+            () ->
+                authService.signup(
+                    new SignupRequest("new@example.com", "닉네임", "password123", "999999")))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
+
+    then(userRepository).should(never()).saveAndFlush(any());
   }
 
   @Test
-  @DisplayName("이메일인증_사용자미존재_예외발생")
-  void verifyEmail_userNotFound_throwsException() {
-    EmailVerification verification =
-        EmailVerification.builder()
-            .email("notfound@example.com")
-            .code("123456")
-            .expiresAt(LocalDateTime.now().plusMinutes(5))
-            .build();
-    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("notfound@example.com"))
-        .willReturn(Optional.of(verification));
-    given(userRepository.findByEmail("notfound@example.com")).willReturn(Optional.empty());
+  @DisplayName("회원가입_정상_emailVerified_true_토큰발급_검증행소비")
+  void signup_success_returnsTokensAndConsumesVerification() {
+    ReflectionTestUtils.setField(authService, "refreshTokenExpiry", 1209600000L);
+
+    given(userRepository.existsByEmail("new@example.com")).willReturn(false);
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("new@example.com"))
+        .willReturn(Optional.of(validVerification("new@example.com", "123456")));
+    given(nicknameNormalizer.normalize("새사용자")).willReturn("새사용자");
+    given(userRepository.existsByNickname("새사용자")).willReturn(false);
+    given(passwordEncoder.encode("password123")).willReturn("hashed");
+    given(userRepository.saveAndFlush(any(User.class)))
+        .willAnswer(
+            inv -> {
+              User u = inv.getArgument(0);
+              ReflectionTestUtils.setField(u, "id", 7L);
+              return u;
+            });
+    given(jwtProvider.generateAccessToken(7L)).willReturn("AT");
+    given(jwtProvider.generateRefreshToken(7L)).willReturn("RT");
+
+    SignupResponse response =
+        authService.signup(new SignupRequest("new@example.com", "새사용자", "password123", "123456"));
+
+    assertThat(response.accessToken()).isEqualTo("AT");
+    assertThat(response.refreshToken()).isEqualTo("RT");
+    assertThat(response.user().email()).isEqualTo("new@example.com");
+    assertThat(response.user().nickname()).isEqualTo("새사용자");
+    assertThat(response.user().id()).isEqualTo(7L);
+
+    ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+    then(userRepository).should().saveAndFlush(captor.capture());
+    User saved = captor.getValue();
+    assertThat(saved.getProvider()).isEqualTo(AuthProvider.LOCAL);
+    assertThat(saved.isEmailVerified()).isTrue();
+    assertThat(saved.getPassword()).isEqualTo("hashed");
+
+    then(emailVerificationRepository).should().deleteByEmail("new@example.com");
+    then(refreshTokenRepository).should().save(any(RefreshToken.class));
+  }
+
+  @Test
+  @DisplayName("회원가입_닉네임중복_예외발생_saveAndFlush미호출")
+  void signup_duplicateNickname_throws() {
+    given(userRepository.existsByEmail("user@example.com")).willReturn(false);
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("user@example.com"))
+        .willReturn(Optional.of(validVerification("user@example.com", "123456")));
+    given(nicknameNormalizer.normalize("중복닉네임")).willReturn("중복닉네임");
+    given(userRepository.existsByNickname("중복닉네임")).willReturn(true);
 
     assertThatThrownBy(
-            () -> authService.verifyEmail(new EmailVerifyRequest("notfound@example.com", "123456")))
+            () ->
+                authService.signup(
+                    new SignupRequest("user@example.com", "중복닉네임", "password123", "123456")))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+        .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
+
+    then(userRepository).should(never()).saveAndFlush(any());
   }
 
   @Test
-  @DisplayName("이메일인증_정상_사용자인증완료")
-  void verifyEmail_success_userVerified() {
-    EmailVerification verification =
-        EmailVerification.builder()
-            .email("verify@example.com")
-            .code("123456")
-            .expiresAt(LocalDateTime.now().plusMinutes(5))
-            .build();
-    User user =
-        User.builder()
-            .email("verify@example.com")
-            .nickname("사용자")
-            .password("hashed")
-            .provider(AuthProvider.LOCAL)
-            .emailVerified(false)
-            .build();
+  @DisplayName("회원가입_레이스컨디션_DataIntegrityViolation_닉네임포함_NICKNAME_ALREADY_EXISTS")
+  void signup_raceConditionNicknameDuplicate_converts() {
+    given(userRepository.existsByEmail("race@example.com")).willReturn(false);
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("race@example.com"))
+        .willReturn(Optional.of(validVerification("race@example.com", "123456")));
+    given(nicknameNormalizer.normalize("레이스닉네임")).willReturn("레이스닉네임");
+    given(userRepository.existsByNickname("레이스닉네임")).willReturn(false);
+    given(passwordEncoder.encode("password123")).willReturn("hashed");
 
-    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("verify@example.com"))
-        .willReturn(Optional.of(verification));
-    given(userRepository.findByEmail("verify@example.com")).willReturn(Optional.of(user));
+    RuntimeException cause =
+        new RuntimeException("ERROR: duplicate key value violates unique constraint nickname");
+    DataIntegrityViolationException dive =
+        new DataIntegrityViolationException("constraint violation", cause);
+    given(userRepository.saveAndFlush(any(User.class))).willThrow(dive);
 
-    authService.verifyEmail(new EmailVerifyRequest("verify@example.com", "123456"));
+    assertThatThrownBy(
+            () ->
+                authService.signup(
+                    new SignupRequest("race@example.com", "레이스닉네임", "password123", "123456")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
+  }
 
-    assertThat(verification.isVerified()).isTrue();
-    assertThat(user.isEmailVerified()).isTrue();
+  @Test
+  @DisplayName("회원가입_닉네임형식위반_NicknamePolicy예외_saveAndFlush미호출")
+  void signup_invalidNicknameFormat_throws() {
+    given(userRepository.existsByEmail("user@example.com")).willReturn(false);
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("user@example.com"))
+        .willReturn(Optional.of(validVerification("user@example.com", "123456")));
+    given(nicknameNormalizer.normalize("x")).willReturn("x");
+    willThrow(new BusinessException(ErrorCode.INVALID_NICKNAME_FORMAT))
+        .given(nicknamePolicy)
+        .enforce("x");
+
+    assertThatThrownBy(
+            () ->
+                authService.signup(
+                    new SignupRequest("user@example.com", "x", "password123", "123456")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
+
+    then(userRepository).should(never()).saveAndFlush(any());
   }
 
   // ============ Login Tests ============
@@ -409,5 +477,46 @@ class AuthServiceTest {
     authService.logout(2L);
 
     then(refreshTokenRepository).should().deleteByUserId(2L);
+  }
+
+  // ============ CheckNicknameAvailability Tests ============
+
+  @Test
+  @DisplayName("checkNicknameAvailability_형식위반_unavailable_format반환")
+  void checkNicknameAvailability_invalidFormat_returnsUnavailableFormat() {
+    given(nicknameNormalizer.normalize("x")).willReturn("x");
+    given(nicknamePolicy.isValid("x")).willReturn(false);
+
+    NicknameAvailabilityResponse result = authService.checkNicknameAvailability("x");
+
+    assertThat(result.available()).isFalse();
+    assertThat(result.reason()).isEqualTo(NicknameAvailabilityResponse.REASON_FORMAT);
+    then(userRepository).should(never()).existsByNickname(anyString());
+  }
+
+  @Test
+  @DisplayName("checkNicknameAvailability_닉네임중복_unavailable_duplicate반환")
+  void checkNicknameAvailability_duplicateNickname_returnsUnavailableDuplicate() {
+    given(nicknameNormalizer.normalize("이미있는닉네임")).willReturn("이미있는닉네임");
+    given(nicknamePolicy.isValid("이미있는닉네임")).willReturn(true);
+    given(userRepository.existsByNickname("이미있는닉네임")).willReturn(true);
+
+    NicknameAvailabilityResponse result = authService.checkNicknameAvailability("이미있는닉네임");
+
+    assertThat(result.available()).isFalse();
+    assertThat(result.reason()).isEqualTo(NicknameAvailabilityResponse.REASON_DUPLICATE);
+  }
+
+  @Test
+  @DisplayName("checkNicknameAvailability_사용가능닉네임_AVAILABLE반환")
+  void checkNicknameAvailability_validAndUnique_returnsAvailable() {
+    given(nicknameNormalizer.normalize("새닉네임")).willReturn("새닉네임");
+    given(nicknamePolicy.isValid("새닉네임")).willReturn(true);
+    given(userRepository.existsByNickname("새닉네임")).willReturn(false);
+
+    NicknameAvailabilityResponse result = authService.checkNicknameAvailability("새닉네임");
+
+    assertThat(result.available()).isTrue();
+    assertThat(result.reason()).isNull();
   }
 }
