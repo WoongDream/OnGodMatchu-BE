@@ -2,6 +2,7 @@ package com.ongodmatchu.domain.auth.service;
 
 import com.ongodmatchu.domain.auth.dto.EmailVerifyRequest;
 import com.ongodmatchu.domain.auth.dto.LoginRequest;
+import com.ongodmatchu.domain.auth.dto.NicknameAvailabilityResponse;
 import com.ongodmatchu.domain.auth.dto.SignupRequest;
 import com.ongodmatchu.domain.auth.dto.TokenResponse;
 import com.ongodmatchu.domain.auth.entity.EmailVerification;
@@ -9,9 +10,12 @@ import com.ongodmatchu.domain.auth.entity.RefreshToken;
 import com.ongodmatchu.domain.auth.jwt.JwtProvider;
 import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
+import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
+import com.ongodmatchu.domain.user.validation.NicknamePolicy;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
 import com.ongodmatchu.infra.mail.MailService;
@@ -19,6 +23,7 @@ import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -35,6 +40,9 @@ public class AuthService {
   private final JwtProvider jwtProvider;
   private final PasswordEncoder passwordEncoder;
   private final MailService mailService;
+  private final PasswordValidator passwordValidator;
+  private final NicknameNormalizer nicknameNormalizer;
+  private final NicknamePolicy nicknamePolicy;
 
   @Value("${jwt.refresh-token-expiry}")
   private long refreshTokenExpiry;
@@ -45,17 +53,46 @@ public class AuthService {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
     }
 
+    String nickname = nicknameNormalizer.normalize(request.nickname());
+    nicknamePolicy.enforce(nickname);
+    if (userRepository.existsByNickname(nickname)) {
+      throw new BusinessException(ErrorCode.NICKNAME_ALREADY_EXISTS);
+    }
+
+    passwordValidator.validate(request.password(), request.email(), nickname);
+
     User user =
         User.builder()
             .email(request.email())
-            .nickname(request.nickname())
+            .nickname(nickname)
             .password(passwordEncoder.encode(request.password()))
             .provider(AuthProvider.LOCAL)
             .emailVerified(false)
             .build();
-    userRepository.save(user);
+    try {
+      userRepository.saveAndFlush(user);
+    } catch (DataIntegrityViolationException e) {
+      String message = e.getMostSpecificCause().getMessage();
+      if (message != null && message.toLowerCase().contains("nickname")) {
+        throw new BusinessException(ErrorCode.NICKNAME_ALREADY_EXISTS);
+      }
+      throw e;
+    }
 
     sendVerificationCode(request.email());
+  }
+
+  @Transactional(readOnly = true)
+  public NicknameAvailabilityResponse checkNicknameAvailability(String rawNickname) {
+    String nickname = nicknameNormalizer.normalize(rawNickname);
+    if (!nicknamePolicy.isValid(nickname)) {
+      return NicknameAvailabilityResponse.unavailable(NicknameAvailabilityResponse.REASON_FORMAT);
+    }
+    if (userRepository.existsByNickname(nickname)) {
+      return NicknameAvailabilityResponse.unavailable(
+          NicknameAvailabilityResponse.REASON_DUPLICATE);
+    }
+    return NicknameAvailabilityResponse.AVAILABLE;
   }
 
   @Transactional

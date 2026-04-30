@@ -10,6 +10,7 @@ import static org.mockito.Mockito.never;
 
 import com.ongodmatchu.domain.auth.dto.EmailVerifyRequest;
 import com.ongodmatchu.domain.auth.dto.LoginRequest;
+import com.ongodmatchu.domain.auth.dto.NicknameAvailabilityResponse;
 import com.ongodmatchu.domain.auth.dto.SignupRequest;
 import com.ongodmatchu.domain.auth.dto.TokenResponse;
 import com.ongodmatchu.domain.auth.entity.EmailVerification;
@@ -20,6 +21,8 @@ import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
+import com.ongodmatchu.domain.user.validation.NicknamePolicy;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
 import com.ongodmatchu.infra.mail.MailService;
@@ -32,6 +35,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -45,6 +49,9 @@ class AuthServiceTest {
   @Mock private JwtProvider jwtProvider;
   @Mock private PasswordEncoder passwordEncoder;
   @Mock private MailService mailService;
+  @Mock private com.ongodmatchu.domain.auth.validation.PasswordValidator passwordValidator;
+  @Mock private NicknameNormalizer nicknameNormalizer;
+  @Mock private NicknamePolicy nicknamePolicy;
 
   // ============ Signup Tests ============
 
@@ -59,7 +66,7 @@ class AuthServiceTest {
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
 
-    then(userRepository).should(never()).save(any());
+    then(userRepository).should(never()).saveAndFlush(any());
     then(emailVerificationRepository).should(never()).save(any());
     then(mailService).should(never()).sendVerificationCode(anyString(), anyString());
   }
@@ -68,11 +75,13 @@ class AuthServiceTest {
   @DisplayName("회원가입_정상_사용자저장_인증코드발송")
   void signup_success_savesUserAndSendsVerificationCode() {
     given(userRepository.existsByEmail("new@example.com")).willReturn(false);
+    given(nicknameNormalizer.normalize("새사용자")).willReturn("새사용자");
+    given(userRepository.existsByNickname("새사용자")).willReturn(false);
     given(passwordEncoder.encode("password123")).willReturn("hashed-password");
 
     authService.signup(new SignupRequest("new@example.com", "새사용자", "password123"));
 
-    then(userRepository).should().save(any(User.class));
+    then(userRepository).should().saveAndFlush(any(User.class));
     then(emailVerificationRepository).should().deleteByEmail("new@example.com");
     then(emailVerificationRepository).should().save(any(EmailVerification.class));
     then(mailService).should().sendVerificationCode(anyString(), anyString());
@@ -82,12 +91,14 @@ class AuthServiceTest {
   @DisplayName("회원가입_사용자_속성_검증")
   void signup_success_userAttributesCorrect() {
     given(userRepository.existsByEmail("test@example.com")).willReturn(false);
+    given(nicknameNormalizer.normalize("테스트")).willReturn("테스트");
+    given(userRepository.existsByNickname("테스트")).willReturn(false);
     given(passwordEncoder.encode("password123")).willReturn("encoded-pass");
 
     authService.signup(new SignupRequest("test@example.com", "테스트", "password123"));
 
     ArgumentCaptor<User> userCaptor = ArgumentCaptor.forClass(User.class);
-    then(userRepository).should().save(userCaptor.capture());
+    then(userRepository).should().saveAndFlush(userCaptor.capture());
 
     User savedUser = userCaptor.getValue();
     assertThat(savedUser.getEmail()).isEqualTo("test@example.com");
@@ -409,5 +420,104 @@ class AuthServiceTest {
     authService.logout(2L);
 
     then(refreshTokenRepository).should().deleteByUserId(2L);
+  }
+
+  // ============ Signup — 닉네임 관련 Tests ============
+
+  @Test
+  @DisplayName("회원가입_닉네임중복_예외발생_saveAndFlush미호출")
+  void signup_duplicateNickname_throwsException_saveAndFlushNotCalled() {
+    given(userRepository.existsByEmail("user@example.com")).willReturn(false);
+    given(nicknameNormalizer.normalize("중복닉네임")).willReturn("중복닉네임");
+    given(userRepository.existsByNickname("중복닉네임")).willReturn(true);
+
+    assertThatThrownBy(
+            () -> authService.signup(new SignupRequest("user@example.com", "중복닉네임", "password123")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
+
+    then(userRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  @DisplayName("회원가입_레이스컨디션_DataIntegrityViolation_닉네임포함_NICKNAME_ALREADY_EXISTS변환")
+  void signup_raceConditionNicknameDuplicate_convertsToBusinessException() {
+    given(userRepository.existsByEmail("race@example.com")).willReturn(false);
+    given(nicknameNormalizer.normalize("레이스닉네임")).willReturn("레이스닉네임");
+    given(userRepository.existsByNickname("레이스닉네임")).willReturn(false);
+    given(passwordEncoder.encode("password123")).willReturn("hashed");
+
+    RuntimeException cause =
+        new RuntimeException("ERROR: duplicate key value violates unique constraint nickname");
+    DataIntegrityViolationException dive =
+        new DataIntegrityViolationException("constraint violation", cause);
+    given(userRepository.saveAndFlush(any(User.class))).willThrow(dive);
+
+    assertThatThrownBy(
+            () ->
+                authService.signup(new SignupRequest("race@example.com", "레이스닉네임", "password123")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
+  }
+
+  @Test
+  @DisplayName("회원가입_닉네임형식위반_NicknamePolicy예외_saveAndFlush미호출")
+  void signup_invalidNicknameFormat_nicknamePolicyThrows_saveAndFlushNotCalled() {
+    given(userRepository.existsByEmail("user@example.com")).willReturn(false);
+    given(nicknameNormalizer.normalize("x")).willReturn("x");
+    org.mockito.BDDMockito.willThrow(new BusinessException(ErrorCode.INVALID_NICKNAME_FORMAT))
+        .given(nicknamePolicy)
+        .enforce("x");
+
+    assertThatThrownBy(
+            () -> authService.signup(new SignupRequest("user@example.com", "x", "password123")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
+
+    then(userRepository).should(never()).saveAndFlush(any());
+  }
+
+  // ============ CheckNicknameAvailability Tests ============
+
+  @Test
+  @DisplayName("checkNicknameAvailability_형식위반_unavailable_format반환")
+  void checkNicknameAvailability_invalidFormat_returnsUnavailableFormat() {
+    given(nicknameNormalizer.normalize("x")).willReturn("x");
+    given(nicknamePolicy.isValid("x")).willReturn(false);
+
+    NicknameAvailabilityResponse result = authService.checkNicknameAvailability("x");
+
+    assertThat(result.available()).isFalse();
+    assertThat(result.reason()).isEqualTo(NicknameAvailabilityResponse.REASON_FORMAT);
+    then(userRepository).should(never()).existsByNickname(anyString());
+  }
+
+  @Test
+  @DisplayName("checkNicknameAvailability_닉네임중복_unavailable_duplicate반환")
+  void checkNicknameAvailability_duplicateNickname_returnsUnavailableDuplicate() {
+    given(nicknameNormalizer.normalize("이미있는닉네임")).willReturn("이미있는닉네임");
+    given(nicknamePolicy.isValid("이미있는닉네임")).willReturn(true);
+    given(userRepository.existsByNickname("이미있는닉네임")).willReturn(true);
+
+    NicknameAvailabilityResponse result = authService.checkNicknameAvailability("이미있는닉네임");
+
+    assertThat(result.available()).isFalse();
+    assertThat(result.reason()).isEqualTo(NicknameAvailabilityResponse.REASON_DUPLICATE);
+  }
+
+  @Test
+  @DisplayName("checkNicknameAvailability_사용가능닉네임_AVAILABLE반환")
+  void checkNicknameAvailability_validAndUnique_returnsAvailable() {
+    given(nicknameNormalizer.normalize("새닉네임")).willReturn("새닉네임");
+    given(nicknamePolicy.isValid("새닉네임")).willReturn(true);
+    given(userRepository.existsByNickname("새닉네임")).willReturn(false);
+
+    NicknameAvailabilityResponse result = authService.checkNicknameAvailability("새닉네임");
+
+    assertThat(result.available()).isTrue();
+    assertThat(result.reason()).isNull();
   }
 }
