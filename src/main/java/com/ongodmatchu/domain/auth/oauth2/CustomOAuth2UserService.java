@@ -4,6 +4,7 @@ import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.service.RandomNicknameGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
@@ -17,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
   private final UserRepository userRepository;
+  private final RandomNicknameGenerator nicknameGenerator;
 
   @Override
   @Transactional
@@ -47,7 +49,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
     return userRepository.save(
         User.builder()
             .email(userInfo.getEmail())
-            .nickname(userInfo.getNickname())
+            .nickname(nicknameGenerator.generate())
             .provider(AuthProvider.valueOf(registrationId.toUpperCase()))
             .providerId(userInfo.getId())
             .emailVerified(true)

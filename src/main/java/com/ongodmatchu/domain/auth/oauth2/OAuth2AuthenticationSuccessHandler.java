@@ -1,13 +1,11 @@
 package com.ongodmatchu.domain.auth.oauth2;
 
-import com.ongodmatchu.domain.auth.entity.RefreshToken;
-import com.ongodmatchu.domain.auth.jwt.JwtProvider;
-import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
+import com.ongodmatchu.domain.auth.dto.TokenResponse;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
+import com.ongodmatchu.domain.auth.service.AuthService;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
-import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.core.Authentication;
@@ -19,14 +17,10 @@ import org.springframework.web.util.UriComponentsBuilder;
 @RequiredArgsConstructor
 public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationSuccessHandler {
 
-  private final JwtProvider jwtProvider;
-  private final RefreshTokenRepository refreshTokenRepository;
+  private final AuthService authService;
 
   @Value("${app.frontend-url}")
   private String frontendUrl;
-
-  @Value("${jwt.refresh-token-expiry}")
-  private long refreshTokenExpiry;
 
   @Override
   public void onAuthenticationSuccess(
@@ -35,21 +29,12 @@ public class OAuth2AuthenticationSuccessHandler extends SimpleUrlAuthenticationS
     CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
     Long userId = userDetails.getUser().getId();
 
-    String accessToken = jwtProvider.generateAccessToken(userId);
-    String refreshTokenValue = jwtProvider.generateRefreshToken(userId);
-
-    refreshTokenRepository.deleteByUserId(userId);
-    refreshTokenRepository.save(
-        RefreshToken.builder()
-            .userId(userId)
-            .token(refreshTokenValue)
-            .expiresAt(LocalDateTime.now().plusSeconds(refreshTokenExpiry / 1000))
-            .build());
+    TokenResponse tokens = authService.issueTokens(userId);
 
     String redirectUrl =
         UriComponentsBuilder.fromUriString(frontendUrl + "/oauth2/callback")
-            .queryParam("accessToken", accessToken)
-            .queryParam("refreshToken", refreshTokenValue)
+            .queryParam("accessToken", tokens.accessToken())
+            .queryParam("refreshToken", tokens.refreshToken())
             .build()
             .toUriString();
 
