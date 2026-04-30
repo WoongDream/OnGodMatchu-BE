@@ -14,8 +14,13 @@ public record ApiResponse<T>(boolean success, T data, ErrorBody error) {
   }
 
   public static ApiResponse<Void> fail(String code, String message) {
-    return new ApiResponse<>(false, null, new ErrorBody(code, message));
+    return new ApiResponse<>(false, null, new ErrorBody(code, message, null));
   }
 
-  public record ErrorBody(String code, String message) {}
+  public static ApiResponse<Void> fail(String code, String message, Long retryAfter) {
+    return new ApiResponse<>(false, null, new ErrorBody(code, message, retryAfter));
+  }
+
+  @JsonInclude(JsonInclude.Include.NON_NULL)
+  public record ErrorBody(String code, String message, Long retryAfter) {}
 }

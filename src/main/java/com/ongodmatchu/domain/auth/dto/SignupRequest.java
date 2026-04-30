@@ -2,6 +2,7 @@ package com.ongodmatchu.domain.auth.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 
 public record SignupRequest(
@@ -10,4 +11,6 @@ public record SignupRequest(
         String nickname,
     @NotBlank(message = "비밀번호를 입력해주세요.")
         @Size(min = 10, max = 64, message = "비밀번호는 10자 이상 64자 이하여야 합니다.")
-        String password) {}
+        String password,
+    @NotBlank(message = "인증 코드를 입력해주세요.") @Pattern(regexp = "\\d{6}", message = "인증 코드는 6자리 숫자입니다.")
+        String code) {}
