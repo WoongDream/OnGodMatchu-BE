@@ -56,8 +56,8 @@ class AuthControllerTest {
   }
 
   @Test
-  @DisplayName("checkNickname_중복닉네임_available_false_reason_duplicate")
-  void checkNickname_duplicate_returns200WithDuplicateReason() throws Exception {
+  @DisplayName("checkNickname_중복닉네임_available_false_reason_taken")
+  void checkNickname_duplicate_returns200WithTakenReason() throws Exception {
     given(authService.checkNicknameAvailability("takenNick"))
         .willReturn(
             NicknameAvailabilityResponse.unavailable(
@@ -68,7 +68,7 @@ class AuthControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.available").value(false))
-        .andExpect(jsonPath("$.data.reason").value("duplicate"));
+        .andExpect(jsonPath("$.data.reason").value("taken"));
   }
 
   @Test

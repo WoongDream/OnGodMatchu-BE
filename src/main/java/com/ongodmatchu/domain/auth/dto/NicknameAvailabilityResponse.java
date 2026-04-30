@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record NicknameAvailabilityResponse(boolean available, String reason) {
 
   public static final String REASON_FORMAT = "format";
-  public static final String REASON_DUPLICATE = "duplicate";
+  public static final String REASON_DUPLICATE = "taken";
 
   public static final NicknameAvailabilityResponse AVAILABLE =
       new NicknameAvailabilityResponse(true, null);
