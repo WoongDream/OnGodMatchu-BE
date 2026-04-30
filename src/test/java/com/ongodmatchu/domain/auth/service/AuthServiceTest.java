@@ -45,6 +45,7 @@ class AuthServiceTest {
   @Mock private JwtProvider jwtProvider;
   @Mock private PasswordEncoder passwordEncoder;
   @Mock private MailService mailService;
+  @Mock private com.ongodmatchu.domain.auth.validation.PasswordValidator passwordValidator;
 
   // ============ Signup Tests ============
 

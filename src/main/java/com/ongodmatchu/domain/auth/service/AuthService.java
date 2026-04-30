@@ -9,6 +9,7 @@ import com.ongodmatchu.domain.auth.entity.RefreshToken;
 import com.ongodmatchu.domain.auth.jwt.JwtProvider;
 import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
+import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -35,6 +36,7 @@ public class AuthService {
   private final JwtProvider jwtProvider;
   private final PasswordEncoder passwordEncoder;
   private final MailService mailService;
+  private final PasswordValidator passwordValidator;
 
   @Value("${jwt.refresh-token-expiry}")
   private long refreshTokenExpiry;
@@ -44,6 +46,8 @@ public class AuthService {
     if (userRepository.existsByEmail(request.email())) {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
     }
+
+    passwordValidator.validate(request.password(), request.email(), request.nickname());
 
     User user =
         User.builder()

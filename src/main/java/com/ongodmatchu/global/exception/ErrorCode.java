@@ -19,6 +19,10 @@ public enum ErrorCode {
   EMAIL_NOT_VERIFIED(HttpStatus.FORBIDDEN, "EMAIL_NOT_VERIFIED", "이메일 인증이 필요합니다."),
   SOCIAL_USER_PASSWORD_LOGIN(
       HttpStatus.BAD_REQUEST, "SOCIAL_USER_PASSWORD_LOGIN", "소셜 로그인 계정은 비밀번호 로그인을 사용할 수 없습니다."),
+  PASSWORD_POLICY_VIOLATION(
+      HttpStatus.BAD_REQUEST, "PASSWORD_POLICY_VIOLATION", "비밀번호 정책을 위반했습니다."),
+  PASSWORD_BREACHED(
+      HttpStatus.UNPROCESSABLE_ENTITY, "PASSWORD_BREACHED", "외부에 유출된 이력이 있는 비밀번호입니다."),
 
   // Email verification
   INVALID_VERIFICATION_CODE(
