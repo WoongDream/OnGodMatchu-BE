@@ -12,6 +12,8 @@ import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
+import com.ongodmatchu.domain.user.validation.NicknamePolicy;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
 import java.lang.reflect.Field;
@@ -29,6 +31,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class UserServiceTest {
 
   @Mock private UserRepository userRepository;
+  @Mock private NicknameNormalizer nicknameNormalizer;
+  @Mock private NicknamePolicy nicknamePolicy;
 
   @InjectMocks private UserService userService;
 
@@ -159,6 +163,7 @@ class UserServiceTest {
     User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
     UserUpdateRequest request = new UserUpdateRequest("새닉네임");
     given(userRepository.findById(userId)).willReturn(Optional.of(user));
+    given(nicknameNormalizer.normalize("새닉네임")).willReturn("새닉네임");
     given(userRepository.existsByNickname("새닉네임")).willReturn(false);
 
     // when
@@ -176,6 +181,7 @@ class UserServiceTest {
     User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
     UserUpdateRequest request = new UserUpdateRequest("중복닉네임");
     given(userRepository.findById(userId)).willReturn(Optional.of(user));
+    given(nicknameNormalizer.normalize("중복닉네임")).willReturn("중복닉네임");
     given(userRepository.existsByNickname("중복닉네임")).willReturn(true);
 
     // when & then
@@ -193,6 +199,7 @@ class UserServiceTest {
     User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
     UserUpdateRequest request = new UserUpdateRequest("기존닉네임");
     given(userRepository.findById(userId)).willReturn(Optional.of(user));
+    given(nicknameNormalizer.normalize("기존닉네임")).willReturn("기존닉네임");
 
     // when
     UserResponse response = userService.updateMe(userId, request);

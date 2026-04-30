@@ -2,6 +2,7 @@ package com.ongodmatchu.domain.auth.controller;
 
 import com.ongodmatchu.domain.auth.dto.EmailVerifyRequest;
 import com.ongodmatchu.domain.auth.dto.LoginRequest;
+import com.ongodmatchu.domain.auth.dto.NicknameAvailabilityResponse;
 import com.ongodmatchu.domain.auth.dto.SignupRequest;
 import com.ongodmatchu.domain.auth.dto.TokenResponse;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
@@ -11,9 +12,11 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -27,6 +30,12 @@ public class AuthController {
   public ResponseEntity<ApiResponse<Void>> signup(@Valid @RequestBody SignupRequest request) {
     authService.signup(request);
     return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  @GetMapping("/check-nickname")
+  public ResponseEntity<ApiResponse<NicknameAvailabilityResponse>> checkNickname(
+      @RequestParam String nickname) {
+    return ResponseEntity.ok(ApiResponse.ok(authService.checkNicknameAvailability(nickname)));
   }
 
   @PostMapping("/verify-email")

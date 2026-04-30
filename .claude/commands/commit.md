@@ -16,4 +16,11 @@ Run the following steps in order:
 
 5. Commit with `git commit -m "[type] message"`
 
-Do NOT push. Do NOT run tests. Stop after the commit is complete.
+6. `TODO.md` 동기화 — 이번 커밋이 `## 진행 중` 항목을 끝낸 경우에만:
+   - `TODO.md` 를 읽고 `## 진행 중` 항목 중 이번 커밋 diff 로 실제 끝난 것만 골라낸다 (애매하면 그대로 둔다).
+   - 골라낸 항목을 `/todo` 커맨드의 1단계 규칙대로 `## 완료` 로 옮긴다 (`### 제목 — <hash>` 그룹 + `[x]` 결과물 2~6개로 압축, `## 완료` 맨 위에 추가).
+   - `<hash>` 는 방금 만든 커밋의 short hash (`git rev-parse --short HEAD`).
+   - `TODO.md` 는 `.gitignore` 로 추적 제외라 git 에 반영되지 않음. 별도 커밋 없음.
+   - 진행 중에 옮길 항목이 없으면 이 단계는 건너뛴다.
+
+Do NOT push. Do NOT run tests. Stop after the commit (and optional TODO sync) is complete.
