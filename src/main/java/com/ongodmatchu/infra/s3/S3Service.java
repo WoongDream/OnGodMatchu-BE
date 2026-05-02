@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectTaggingRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
@@ -59,7 +60,12 @@ public class S3Service {
     PutObjectPresignRequest presignRequest =
         PutObjectPresignRequest.builder()
             .signatureDuration(UPLOAD_URL_EXPIRY)
-            .putObjectRequest(r -> r.bucket(bucket).key(key).contentType(request.contentType()))
+            .putObjectRequest(
+                r ->
+                    r.bucket(bucket)
+                        .key(key)
+                        .contentType(request.contentType())
+                        .tagging(UploadPolicy.PENDING_TAGGING_HEADER))
             .build();
     PresignedPutObjectRequest presigned = s3Presigner.presignPutObject(presignRequest);
 
@@ -119,6 +125,10 @@ public class S3Service {
     if (!UploadPolicy.isAllowedSize(head.contentLength())) {
       throw new BusinessException(ErrorCode.INVALID_FILE_SIZE);
     }
+
+    // 태그 제거가 실패하면 DB 도 PENDING 으로 남아 사용자가 /complete 재시도 가능.
+    s3Client.deleteObjectTagging(
+        DeleteObjectTaggingRequest.builder().bucket(bucket).key(key).build());
 
     meta.markCompleted(head.contentLength());
   }

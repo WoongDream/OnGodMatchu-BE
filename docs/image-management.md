@@ -27,11 +27,12 @@ OnGodMatchu 의 이미지 저장 / 서빙 아키텍처.
 
 | 단계 | 동작 |
 |------|------|
-| ① | BE가 `quiz-images/{user.publicId}/{uuid}.{ext}` key + presigned PUT URL 발급, `upload_meta` 에 PENDING 레코드 INSERT |
-| ② | FE가 직접 S3에 PUT (BE 트래픽 없음). Content-Type 이 서명에 포함되어 있어 다른 타입 PUT은 S3가 거부 |
-| ③ | FE가 PATCH `/complete` 호출 → BE가 S3 HEAD 로 size / contentType 재검증 후 `upload_meta` 를 COMPLETED 로 전환 |
+| ① | BE가 `quiz-images/{user.publicId}/{uuid}.{ext}` key + presigned PUT URL 발급 (Content-Type / `tagging=status=pending` 서명 포함), `upload_meta` 에 PENDING 레코드 INSERT |
+| ② | FE가 직접 S3에 PUT — `Content-Type` 헤더 + `x-amz-tagging: status=pending` 헤더 동봉. 두 값 모두 서명에 포함돼 있어 다르면 S3가 거부 |
+| ③ | FE가 PATCH `/complete` 호출 → BE가 `S3 HEAD → DeleteObjectTagging → DB COMPLETED` 순서로 처리. 태그 제거가 실패하면 DB는 PENDING 그대로 유지 → 재시도 가능 |
 | ④ | 퀴즈 생성 시 FE는 **key 만** 전송. BE는 모든 key 가 (a) 본인 소유 (b) COMPLETED 상태인지 검증 |
 | ⑤ | 조회 응답을 만들 때 BE가 모든 key 를 모아 한 번에 GET signed URL (1시간 유효) 로 변환해 내려줌 |
+| Orphan | `/complete` 호출 없이 방치된 객체는 `status=pending` 태그가 남아 있고, S3 라이프사이클 룰 (`prefix=quiz-images/` AND `tag:status=pending` → 1day expire) 로 자동 삭제 |
 
 ## DB 저장 정책 — key 만 저장
 
@@ -85,16 +86,25 @@ Content-Type: application/json
 ```http
 PUT <uploadUrl>
 Content-Type: image/jpeg
+x-amz-tagging: status=pending
 
 <binary>
 ```
 
-- presigned URL 에 Content-Type 이 서명되어 있어 발급 시 명시한 값과 다르면 S3 가 거부.
+- presigned URL 에 `Content-Type` 과 `tagging` 이 서명되어 있다. 두 헤더 모두 정확히 동봉해야 한다 — 누락 / 다른 값 시 S3 가 거부.
+- `status=pending` 태그는 BE 가 `/complete` 검증 후 제거한다. 미제거 객체는 라이프사이클 룰로 자동 삭제.
 - BE 를 거치지 않고 S3 가 직접 받는다.
 
 ### `PATCH /api/upload/complete` — 업로드 완료 알림
 
-**인증 필요.** PUT 성공 후 호출하면 BE 가 S3 HEAD 로 실제 객체를 검증하고 `upload_meta` 를 COMPLETED 로 전환한다.
+**인증 필요.** PUT 성공 후 호출하면 BE 가 다음 순서로 처리한다.
+
+1. 메타 조회 → 본인 소유 / 상태 확인
+2. `S3 HeadObject` — 실제 size / contentType 재검증 (3차 검증)
+3. `S3 DeleteObjectTagging` — `status=pending` 태그 제거 → 라이프사이클 대상에서 빠짐
+4. DB `upload_meta.status = COMPLETED` 로 전환
+
+3 단계가 실패하면 DB 트랜잭션이 롤백되어 PENDING 으로 유지된다 — FE 가 다시 `/complete` 호출하면 재시도된다.
 
 ```http
 PATCH /api/upload/complete
@@ -237,15 +247,16 @@ upload_meta
 ## 운영 인프라 요건
 
 - **버킷**: `ongodmatchu-bucket`, private, ACL 비활성화 (버킷 정책 기반)
-- **CORS**: PUT + GET, FE 오리진 (`http://localhost:5173`, `https://ongodmatchu.com`) 허용, `ETag` expose
-- **IAM** (EC2 인스턴스 Role): `s3:PutObject` / `s3:GetObject` / `s3:HeadObject`
-- **라이프사이클**: 24h 이상 경과한 PENDING 객체 자동 삭제 (Orphan 방지)
+- **CORS**: PUT + GET, FE 오리진 (`http://localhost:5173`, `https://ongodmatchu.com`) 허용
+- **IAM**: `s3:PutObject` / `s3:GetObject` / `s3:HeadObject` / `s3:PutObjectTagging` / `s3:DeleteObjectTagging` / `s3:GetObjectTagging`
+- **라이프사이클**: filter `prefix=quiz-images/` AND `tag:status=pending` → 1day expire — `/complete` 호출이 누락된 orphan 객체만 자동 정리 (정상 객체는 태그가 제거되어 영구 보존)
 
 ## 트러블슈팅
 
 ### 업로드 PUT 이 403 으로 실패
 
-- presigned 발급 시 명시한 `contentType` 과 실제 PUT Header 가 다른 경우. presigned URL 에 Content-Type 이 서명돼 있어 일치해야 한다.
+- `Content-Type` 헤더가 발급 시 값과 다른 경우.
+- `x-amz-tagging: status=pending` 헤더 누락 또는 다른 값. 두 헤더 모두 서명에 포함돼 있어 정확히 동봉 필요.
 - TTL (10분) 만료. 다시 발급 받아야 한다.
 
 ### `viewUrl` 로 GET 시 SignatureDoesNotMatch

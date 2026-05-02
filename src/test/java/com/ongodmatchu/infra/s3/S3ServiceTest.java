@@ -27,6 +27,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.DeleteObjectTaggingRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -87,6 +88,11 @@ class S3ServiceTest {
     then(uploadMetaRepository).should().save(captor.capture());
     assertThat(captor.getValue().getStatus()).isEqualTo(UploadStatus.PENDING);
     assertThat(captor.getValue().getContentType()).isEqualTo("image/jpeg");
+
+    ArgumentCaptor<PutObjectPresignRequest> presignCaptor =
+        ArgumentCaptor.forClass(PutObjectPresignRequest.class);
+    then(s3Presigner).should().presignPutObject(presignCaptor.capture());
+    assertThat(presignCaptor.getValue().putObjectRequest().tagging()).isEqualTo("status=pending");
   }
 
   @Test
@@ -152,6 +158,30 @@ class S3ServiceTest {
 
     assertThat(meta.getStatus()).isEqualTo(UploadStatus.COMPLETED);
     assertThat(meta.getSizeBytes()).isEqualTo(2048L);
+    then(s3Client).should().deleteObjectTagging(any(DeleteObjectTaggingRequest.class));
+  }
+
+  @Test
+  @DisplayName("PATCH /complete — DeleteObjectTagging 실패 시 DB COMPLETED 로 진입하지 않음")
+  void completeUpload_taggingDeletionFails() {
+    User user = testUser();
+    UploadMeta meta =
+        UploadMeta.builder()
+            .user(user)
+            .s3Key("quiz-images/uid/abc.jpg")
+            .contentType("image/jpeg")
+            .build();
+    given(uploadMetaRepository.findByS3Key("quiz-images/uid/abc.jpg"))
+        .willReturn(Optional.of(meta));
+    given(s3Client.headObject(any(HeadObjectRequest.class)))
+        .willReturn(
+            HeadObjectResponse.builder().contentType("image/jpeg").contentLength(2048L).build());
+    given(s3Client.deleteObjectTagging(any(DeleteObjectTaggingRequest.class)))
+        .willThrow(new RuntimeException("S3 down"));
+
+    assertThatThrownBy(() -> s3Service.completeUpload(1L, "quiz-images/uid/abc.jpg"))
+        .isInstanceOf(RuntimeException.class);
+    assertThat(meta.getStatus()).isEqualTo(UploadStatus.PENDING);
   }
 
   @Test
