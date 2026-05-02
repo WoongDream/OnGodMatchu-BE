@@ -32,7 +32,9 @@ public class Question {
   @Column(nullable = false)
   private int orderNum;
 
-  private String imageUrl;
+  private String imageKey;
+
+  private String answerImageKey;
 
   private String questionText;
 
@@ -40,10 +42,17 @@ public class Question {
   private String answer;
 
   @Builder
-  private Question(Quiz quiz, int orderNum, String imageUrl, String questionText, String answer) {
+  private Question(
+      Quiz quiz,
+      int orderNum,
+      String imageKey,
+      String answerImageKey,
+      String questionText,
+      String answer) {
     this.quiz = quiz;
     this.orderNum = orderNum;
-    this.imageUrl = imageUrl;
+    this.imageKey = imageKey;
+    this.answerImageKey = answerImageKey;
     this.questionText = questionText;
     this.answer = answer;
   }
