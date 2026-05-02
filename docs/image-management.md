@@ -114,6 +114,10 @@ Content-Type: application/json
 { "key": "quiz-images/550e8400-.../abc123.jpg" }
 ```
 
+```json
+{ "success": true, "data": null }
+```
+
 - 본인 메타가 아니면 `403 UPLOAD_FORBIDDEN`
 - S3 에 객체 없음 → `422 UPLOAD_VERIFICATION_FAILED`
 - HEAD 결과의 contentType / size 가 정책 위반 → `400 INVALID_FILE_TYPE` / `INVALID_FILE_SIZE`
@@ -229,7 +233,10 @@ upload_meta
 | `PENDING` | `POST /api/upload/presigned` 시 INSERT |
 | `COMPLETED` | `PATCH /api/upload/complete` 시 S3 HEAD 검증 통과 후 전환 |
 
-미완료 PENDING 레코드는 S3 라이프사이클 룰로 24h 이상 경과 시 자동 정리 예정 (인프라 작업).
+**Orphan 정리 정책**
+
+- **S3 객체** — 라이프사이클 룰 (`prefix=quiz-images/` AND `tag:status=pending` → 1day expire) 로 자동 삭제. `/complete` 가 호출돼 태그가 제거된 정상 객체는 영구 보존.
+- **DB `upload_meta` 행** — 자동 정리 없음. PENDING 행이 누적되면 별도 배치로 정리하는 트랙을 추후 검토. 현재 운영 규모에선 영향 미미.
 
 ## 에러 코드
 
@@ -246,10 +253,26 @@ upload_meta
 
 ## 운영 인프라 요건
 
-- **버킷**: `ongodmatchu-bucket`, private, ACL 비활성화 (버킷 정책 기반)
+- **버킷**: `ongodmatchu-images` (ap-northeast-2), private, ACL 비활성화 (버킷 정책 기반)
 - **CORS**: PUT + GET, FE 오리진 (`http://localhost:5173`, `https://ongodmatchu.com`) 허용
 - **IAM**: `s3:PutObject` / `s3:GetObject` / `s3:HeadObject` / `s3:PutObjectTagging` / `s3:DeleteObjectTagging` / `s3:GetObjectTagging`
 - **라이프사이클**: filter `prefix=quiz-images/` AND `tag:status=pending` → 1day expire — `/complete` 호출이 누락된 orphan 객체만 자동 정리 (정상 객체는 태그가 제거되어 영구 보존)
+
+## 운영 검증 (Smoke Test)
+
+라이프사이클 룰을 추가하기 전·IAM 권한 변경 후·운영 배포 직후에 수행한다.
+
+```
+1. POST /api/upload/presigned       → uploadUrl, key 받기
+2. PUT <uploadUrl>                  → Content-Type + x-amz-tagging: status=pending 헤더 동봉
+3. AWS 콘솔에서 객체 태그 확인       → status=pending 부착 확인
+4. PATCH /api/upload/complete       → 200 OK
+5. AWS 콘솔에서 객체 태그 재확인     → status=pending 제거 확인 (태그 없음)
+6. POST /api/quizzes (해당 key 포함) → 201 + 응답에 동적 thumbnailUrl/imageUrl 정상
+7. GET /api/quizzes/:id              → viewUrl 로 이미지 GET 200
+```
+
+3 / 5 / 6 단계가 통과하면 태그 기반 라이프사이클이 안전하게 작동한다는 보장이 된다.
 
 ## 트러블슈팅
 
@@ -270,6 +293,14 @@ upload_meta
 ### 퀴즈 생성 시 `UPLOAD_VERIFICATION_FAILED`
 
 - complete 까지 호출했으나 S3 객체가 사라졌거나, 메타가 PENDING 상태로 멈춰 있는 경우. `upload_meta` row 의 `status` / S3 객체 존재 여부 확인.
+
+### `/complete` 가 500 으로 응답
+
+- 흐름 4단계 (`HEAD → DeleteObjectTagging → DB COMPLETED`) 중 어딘가에서 예외 발생. 트랜잭션 롤백되어 `upload_meta` 는 PENDING 그대로 유지된다 → FE 가 `/complete` 재호출하면 재시도 가능.
+- 흔한 원인:
+    - IAM 권한 누락 (`s3:DeleteObjectTagging` 등) → 운영 IAM 정책 점검
+    - 일시적 S3 장애 → 재호출로 해결
+- 영구 실패 시 `upload_meta.status` 가 PENDING 으로 남고, 객체는 라이프사이클 룰로 24h 후 자동 삭제되어 정합성이 자동 회복된다.
 
 ## 관련 코드
 
