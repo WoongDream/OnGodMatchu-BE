@@ -1,12 +1,14 @@
 package com.ongodmatchu.domain.quiz.controller;
 
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
+import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.global.response.ApiResponse;
 import jakarta.validation.Valid;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -28,6 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class QuizController {
 
   private final QuizService quizService;
+
+  @GetMapping("/categories")
+  public ResponseEntity<ApiResponse<List<CategoryResponse>>> getCategories() {
+    return ResponseEntity.ok(ApiResponse.ok(quizService.getCategories()));
+  }
 
   @GetMapping
   public ResponseEntity<ApiResponse<Page<QuizResponse>>> getQuizList(

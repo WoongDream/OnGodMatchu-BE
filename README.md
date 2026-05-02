@@ -4,7 +4,8 @@
 
 > 프론트엔드: [WoongDream/OnGodMatchu-FE](https://github.com/WoongDream/OnGodMatchu-FE)  
 > 운영 도메인: [api.ongodmatchu.com](https://api.ongodmatchu.com)  
-> 배포 가이드: [DEPLOYMENT.md](./docs/deployment.md)
+> 배포 가이드: [DEPLOYMENT.md](./docs/deployment.md)  
+> 이미지 관리 가이드: [IMAGE-MANAGEMENT.md](./docs/image-management.md)
 
 ## 기술 스택
 
@@ -41,8 +42,12 @@ POST /api/auth/refresh       → 토큰 재발급
 POST /api/auth/logout        → 로그아웃
 GET  /oauth2/authorization/* → 소셜 로그인 (Google / Naver / Kakao)
 
-POST /api/upload/presigned   → S3 Presigned URL 발급
+POST  /api/upload/presigned  → S3 PUT presigned URL 발급 (10분)
+GET   /api/upload/signed     → S3 GET signed URL 발급 (1시간)
+PATCH /api/upload/complete   → 업로드 완료 알림 (S3 HEAD 검증)
 ```
+
+이미지 저장/서빙 정책 (key 저장 + 동적 signed URL): [IMAGE-MANAGEMENT.md](./docs/image-management.md)
 
 ## 패키지 구조
 

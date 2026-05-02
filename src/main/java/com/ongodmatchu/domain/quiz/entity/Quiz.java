@@ -10,7 +10,9 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -26,6 +28,9 @@ public class Quiz extends BaseTimeEntity {
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
 
+  @Column(nullable = false, unique = true, updatable = false)
+  private UUID publicId;
+
   @ManyToOne(fetch = FetchType.LAZY)
   @JoinColumn(name = "user_id", nullable = false)
   private User user;
@@ -38,19 +43,26 @@ public class Quiz extends BaseTimeEntity {
   @Column(nullable = false)
   private String category;
 
-  private String thumbnailUrl;
+  private String thumbnailKey;
 
   @Column(nullable = false)
   private int playCount;
 
   @Builder
-  private Quiz(User user, String title, String description, String category, String thumbnailUrl) {
+  private Quiz(User user, String title, String description, String category, String thumbnailKey) {
     this.user = user;
     this.title = title;
     this.description = description;
     this.category = category;
-    this.thumbnailUrl = thumbnailUrl;
+    this.thumbnailKey = thumbnailKey;
     this.playCount = 0;
+  }
+
+  @PrePersist
+  private void assignPublicId() {
+    if (this.publicId == null) {
+      this.publicId = UUID.randomUUID();
+    }
   }
 
   public void incrementPlayCount() {
