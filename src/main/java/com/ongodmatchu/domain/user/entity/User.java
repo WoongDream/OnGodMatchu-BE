@@ -8,7 +8,9 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
@@ -23,6 +25,9 @@ public class User extends BaseTimeEntity {
   @Id
   @GeneratedValue(strategy = GenerationType.IDENTITY)
   private Long id;
+
+  @Column(nullable = false, unique = true, updatable = false)
+  private UUID publicId;
 
   @Column(nullable = false, unique = true)
   private String email;
@@ -55,6 +60,13 @@ public class User extends BaseTimeEntity {
     this.provider = provider;
     this.providerId = providerId;
     this.emailVerified = emailVerified;
+  }
+
+  @PrePersist
+  private void assignPublicId() {
+    if (this.publicId == null) {
+      this.publicId = UUID.randomUUID();
+    }
   }
 
   public void verifyEmail() {

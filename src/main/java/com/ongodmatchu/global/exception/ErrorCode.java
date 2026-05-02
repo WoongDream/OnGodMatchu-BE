@@ -38,9 +38,19 @@ public enum ErrorCode {
 
   // Quiz
   QUIZ_NOT_FOUND(HttpStatus.NOT_FOUND, "QUIZ_NOT_FOUND", "퀴즈를 찾을 수 없습니다."),
+  INVALID_CATEGORY(HttpStatus.BAD_REQUEST, "INVALID_CATEGORY", "지원하지 않는 카테고리입니다."),
 
   // Question
-  QUESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "QUESTION_NOT_FOUND", "문제를 찾을 수 없습니다.");
+  QUESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "QUESTION_NOT_FOUND", "문제를 찾을 수 없습니다."),
+
+  // Upload
+  INVALID_FILE_TYPE(HttpStatus.BAD_REQUEST, "INVALID_FILE_TYPE", "지원하지 않는 파일 타입입니다."),
+  INVALID_FILE_SIZE(HttpStatus.BAD_REQUEST, "INVALID_FILE_SIZE", "허용된 파일 크기를 초과했습니다."),
+  UPLOAD_NOT_FOUND(HttpStatus.NOT_FOUND, "UPLOAD_NOT_FOUND", "업로드 요청을 찾을 수 없습니다."),
+  UPLOAD_FORBIDDEN(HttpStatus.FORBIDDEN, "UPLOAD_FORBIDDEN", "해당 업로드에 접근할 권한이 없습니다."),
+  UPLOAD_VERIFICATION_FAILED(
+      HttpStatus.UNPROCESSABLE_ENTITY, "UPLOAD_VERIFICATION_FAILED", "S3 업로드 검증에 실패했습니다."),
+  INVALID_UPLOAD_KEY(HttpStatus.BAD_REQUEST, "INVALID_UPLOAD_KEY", "유효하지 않은 업로드 key 입니다.");
 
   private final HttpStatus status;
   private final String code;
