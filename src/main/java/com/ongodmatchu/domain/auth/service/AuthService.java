@@ -15,11 +15,13 @@ import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.service.ProfileImageInitializer;
 import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
 import com.ongodmatchu.domain.user.validation.NicknamePolicy;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
 import com.ongodmatchu.infra.mail.MailService;
+import com.ongodmatchu.infra.s3.S3Service;
 import java.security.SecureRandom;
 import java.time.LocalDateTime;
 import lombok.RequiredArgsConstructor;
@@ -45,9 +47,14 @@ public class AuthService {
   private final NicknameNormalizer nicknameNormalizer;
   private final NicknamePolicy nicknamePolicy;
   private final VerificationCodeRateLimiter rateLimiter;
+  private final ProfileImageInitializer profileImageInitializer;
+  private final S3Service s3Service;
 
   @Value("${jwt.refresh-token-expiry}")
   private long refreshTokenExpiry;
+
+  @Value("${app.profile.default-image-url}")
+  private String defaultProfileImageUrl;
 
   @Transactional
   public void requestVerificationCode(String email, String ipAddress) {
@@ -113,7 +120,13 @@ public class AuthService {
 
     emailVerificationRepository.deleteByEmail(request.email());
 
-    return SignupResponse.of(user, issueTokens(user.getId()));
+    profileImageInitializer.initialize(user);
+
+    String profileImageUrl =
+        user.getProfileImageKey() == null
+            ? defaultProfileImageUrl
+            : s3Service.generateViewUrl(user.getProfileImageKey()).viewUrl();
+    return SignupResponse.of(user, issueTokens(user.getId()), profileImageUrl);
   }
 
   @Transactional(readOnly = true)

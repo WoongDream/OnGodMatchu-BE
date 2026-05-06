@@ -9,7 +9,7 @@ import org.springframework.stereotype.Component;
 public class NicknamePolicy {
 
   private static final int MIN_LENGTH = 2;
-  private static final int MAX_LENGTH = 20;
+  private static final int MAX_LENGTH = 10;
   private static final Pattern ALLOWED = Pattern.compile("^[가-힣A-Za-z0-9_]+$");
 
   public void enforce(String normalized) {

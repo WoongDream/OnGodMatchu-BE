@@ -4,6 +4,7 @@ import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.service.ProfileImageInitializer;
 import com.ongodmatchu.domain.user.service.RandomNicknameGenerator;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
@@ -19,6 +20,7 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
   private final UserRepository userRepository;
   private final RandomNicknameGenerator nicknameGenerator;
+  private final ProfileImageInitializer profileImageInitializer;
 
   @Override
   @Transactional
@@ -46,13 +48,16 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
   }
 
   private User registerUser(OAuth2UserInfo userInfo, String registrationId) {
-    return userRepository.save(
-        User.builder()
-            .email(userInfo.getEmail())
-            .nickname(nicknameGenerator.generate())
-            .provider(AuthProvider.valueOf(registrationId.toUpperCase()))
-            .providerId(userInfo.getId())
-            .emailVerified(true)
-            .build());
+    User user =
+        userRepository.saveAndFlush(
+            User.builder()
+                .email(userInfo.getEmail())
+                .nickname(nicknameGenerator.generate())
+                .provider(AuthProvider.valueOf(registrationId.toUpperCase()))
+                .providerId(userInfo.getId())
+                .emailVerified(true)
+                .build());
+    profileImageInitializer.initialize(user);
+    return user;
   }
 }

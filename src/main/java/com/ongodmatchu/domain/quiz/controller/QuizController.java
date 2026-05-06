@@ -5,6 +5,7 @@ import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.global.response.ApiResponse;
 import jakarta.validation.Valid;
@@ -16,7 +17,9 @@ import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -60,6 +63,22 @@ public class QuizController {
   @PostMapping("/{quizId}/play")
   public ResponseEntity<ApiResponse<Void>> incrementPlayCount(@PathVariable Long quizId) {
     quizService.incrementPlayCount(quizId);
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  @PatchMapping("/{quizId}")
+  public ResponseEntity<ApiResponse<QuizResponse>> updateQuiz(
+      @PathVariable Long quizId,
+      @Valid @RequestBody QuizUpdateRequest request,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    QuizResponse response = quizService.updateQuiz(userDetails.getUser().getId(), quizId, request);
+    return ResponseEntity.ok(ApiResponse.ok(response));
+  }
+
+  @DeleteMapping("/{quizId}")
+  public ResponseEntity<ApiResponse<Void>> deleteQuiz(
+      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    quizService.deleteQuiz(userDetails.getUser().getId(), quizId);
     return ResponseEntity.ok(ApiResponse.ok());
   }
 }

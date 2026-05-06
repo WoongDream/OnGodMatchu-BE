@@ -8,6 +8,7 @@ import com.ongodmatchu.domain.quiz.dto.QuestionResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizCategory;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
@@ -20,6 +21,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -144,5 +146,98 @@ public class QuizService {
             .findById(quizId)
             .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
     quiz.incrementPlayCount();
+  }
+
+  /** 본인의 퀴즈 목록. */
+  @Transactional(readOnly = true)
+  public Page<QuizResponse> getMyQuizList(Long userId, Pageable pageable) {
+    Page<Quiz> page = quizRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
+    return mapWithThumbnails(page);
+  }
+
+  /** 타 유저의 퀴즈 목록. 비공개 프로필 + 외부 뷰어면 빈 페이지. */
+  @Transactional(readOnly = true)
+  public Page<QuizResponse> getQuizListByPublicId(
+      UUID publicId, Long viewerUserId, Pageable pageable) {
+    User author =
+        userRepository
+            .findByPublicId(publicId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+
+    boolean isOwner = viewerUserId != null && viewerUserId.equals(author.getId());
+    if (!author.isProfilePublic() && !isOwner) {
+      return Page.empty(pageable);
+    }
+    return mapWithThumbnails(
+        quizRepository.findByUserIdOrderByCreatedAtDesc(author.getId(), pageable));
+  }
+
+  private Page<QuizResponse> mapWithThumbnails(Page<Quiz> page) {
+    List<String> keys =
+        page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
+    Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
+    return page.map(q -> QuizResponse.from(q, lookupUrl(presigned, q.getThumbnailKey())));
+  }
+
+  @Transactional
+  public QuizResponse updateQuiz(Long userId, Long quizId, QuizUpdateRequest request) {
+    Quiz quiz = findQuizOwned(userId, quizId);
+
+    if (request.title() != null) {
+      quiz.updateTitle(request.title());
+    }
+    if (request.description() != null) {
+      quiz.updateDescription(request.description());
+    }
+    if (request.category() != null) {
+      if (!QuizCategory.isValidKey(request.category())) {
+        throw new BusinessException(ErrorCode.INVALID_CATEGORY);
+      }
+      quiz.updateCategory(request.category());
+    }
+    if (request.thumbnailKey() != null && !request.thumbnailKey().equals(quiz.getThumbnailKey())) {
+      s3Service.verifyKeyOwnedAndCompleted(userId, request.thumbnailKey());
+      String previousThumbnailKey = quiz.getThumbnailKey();
+      quiz.updateThumbnailKey(request.thumbnailKey());
+      if (previousThumbnailKey != null) {
+        s3Service.deleteQuietly(previousThumbnailKey);
+      }
+    }
+
+    String thumbnailUrl =
+        quiz.getThumbnailKey() == null
+            ? null
+            : s3Service.generateViewUrl(quiz.getThumbnailKey()).viewUrl();
+    return QuizResponse.from(quiz, thumbnailUrl);
+  }
+
+  @Transactional
+  public void deleteQuiz(Long userId, Long quizId) {
+    Quiz quiz = findQuizOwned(userId, quizId);
+
+    List<Question> questions = questionRepository.findByQuizIdOrderByOrderNum(quizId);
+    questionRepository.deleteByQuizId(quizId);
+    quizRepository.delete(quiz);
+
+    if (quiz.getThumbnailKey() != null) {
+      s3Service.deleteQuietly(quiz.getThumbnailKey());
+    }
+    for (Question q : questions) {
+      if (q.getImageKey() != null) s3Service.deleteQuietly(q.getImageKey());
+      if (q.getAnswerImageKey() != null && !q.getAnswerImageKey().equals(q.getImageKey())) {
+        s3Service.deleteQuietly(q.getAnswerImageKey());
+      }
+    }
+  }
+
+  private Quiz findQuizOwned(Long userId, Long quizId) {
+    Quiz quiz =
+        quizRepository
+            .findById(quizId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
+    if (!quiz.getUser().getId().equals(userId)) {
+      throw new BusinessException(ErrorCode.QUIZ_FORBIDDEN);
+    }
+    return quiz;
   }
 }

@@ -68,4 +68,20 @@ public class Quiz extends BaseTimeEntity {
   public void incrementPlayCount() {
     this.playCount++;
   }
+
+  public void updateTitle(String title) {
+    this.title = title;
+  }
+
+  public void updateDescription(String description) {
+    this.description = description;
+  }
+
+  public void updateCategory(String category) {
+    this.category = category;
+  }
+
+  public void updateThumbnailKey(String thumbnailKey) {
+    this.thumbnailKey = thumbnailKey;
+  }
 }
