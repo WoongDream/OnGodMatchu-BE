@@ -8,4 +8,6 @@ import org.springframework.data.jpa.repository.JpaRepository;
 public interface QuizRepository extends JpaRepository<Quiz, Long> {
 
   Page<Quiz> findByCategory(String category, Pageable pageable);
+
+  Page<Quiz> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 }

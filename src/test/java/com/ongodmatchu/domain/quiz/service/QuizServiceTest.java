@@ -7,7 +7,9 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
 import com.ongodmatchu.domain.question.entity.Question;
@@ -17,6 +19,7 @@ import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
@@ -39,8 +42,10 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -333,5 +338,426 @@ class QuizServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+  }
+
+  // ============ getMyQuizList ============
+
+  @Test
+  @DisplayName("getMyQuizList_본인퀴즈목록_페이지반환")
+  void getMyQuizList_returnsPaginatedResults() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Pageable pageable = PageRequest.of(0, 12);
+    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    Page<QuizResponse> result = quizService.getMyQuizList(1L, pageable);
+
+    assertThat(result.getContent()).hasSize(1);
+    assertThat(result.getContent().get(0).title()).isEqualTo("퀴즈 제목");
+    then(quizRepository).should().findByUserIdOrderByCreatedAtDesc(1L, pageable);
+  }
+
+  @Test
+  @DisplayName("getMyQuizList_퀴즈없음_빈페이지반환")
+  void getMyQuizList_noQuizzes_returnsEmptyPage() {
+    Pageable pageable = PageRequest.of(0, 12);
+    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+        .willReturn(new PageImpl<>(List.of()));
+
+    Page<QuizResponse> result = quizService.getMyQuizList(1L, pageable);
+
+    assertThat(result.getContent()).isEmpty();
+    assertThat(result.getTotalElements()).isZero();
+  }
+
+  @Test
+  @DisplayName("getMyQuizList_썸네일키있는퀴즈_presign매핑")
+  void getMyQuizList_withThumbnailKey_mapsPresignedUrl() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    ReflectionTestUtils.setField(quiz, "thumbnailKey", "quiz-images/uid/thumb.png");
+    Pageable pageable = PageRequest.of(0, 12);
+    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+    given(s3Service.batchPresignViewUrls(List.of("quiz-images/uid/thumb.png")))
+        .willReturn(Map.of("quiz-images/uid/thumb.png", "https://signed.example/thumb.png"));
+
+    Page<QuizResponse> result = quizService.getMyQuizList(1L, pageable);
+
+    assertThat(result.getContent().get(0).thumbnailUrl())
+        .isEqualTo("https://signed.example/thumb.png");
+  }
+
+  // ============ getQuizListByPublicId ============
+
+  @Test
+  @DisplayName("getQuizListByPublicId_publicId없는사용자_USER_NOT_FOUND예외")
+  void getQuizListByPublicId_userNotFound_throwsException() {
+    UUID unknownId = UUID.randomUUID();
+    given(userRepository.findByPublicId(unknownId)).willReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () -> quizService.getQuizListByPublicId(unknownId, null, PageRequest.of(0, 12)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("getQuizListByPublicId_공개프로필_비로그인_정상목록반환")
+  void getQuizListByPublicId_publicProfile_anonymousViewer_returnsList() {
+    User author = testUser();
+    Quiz quiz = testQuiz(author);
+    UUID authorPublicId = author.getPublicId();
+    Pageable pageable = PageRequest.of(0, 12);
+    given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
+    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, null, pageable);
+
+    assertThat(result.getContent()).hasSize(1);
+    assertThat(result.getContent().get(0).title()).isEqualTo("퀴즈 제목");
+  }
+
+  @Test
+  @DisplayName("getQuizListByPublicId_공개프로필_외부뷰어_정상목록반환")
+  void getQuizListByPublicId_publicProfile_externalViewer_returnsList() {
+    User author = testUser();
+    Quiz quiz = testQuiz(author);
+    UUID authorPublicId = author.getPublicId();
+    Pageable pageable = PageRequest.of(0, 12);
+    given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
+    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, 99L, pageable);
+
+    assertThat(result.getContent()).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("getQuizListByPublicId_비공개프로필_본인_정상목록반환")
+  void getQuizListByPublicId_privateProfile_owner_returnsList() {
+    User author = testUser();
+    author.updateProfilePublic(false);
+    Quiz quiz = testQuiz(author);
+    UUID authorPublicId = author.getPublicId();
+    Pageable pageable = PageRequest.of(0, 12);
+    given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
+    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, 1L, pageable);
+
+    assertThat(result.getContent()).hasSize(1);
+  }
+
+  @Test
+  @DisplayName("getQuizListByPublicId_비공개프로필_외부뷰어_빈페이지반환")
+  void getQuizListByPublicId_privateProfile_externalViewer_returnsEmptyPage() {
+    User author = testUser();
+    author.updateProfilePublic(false);
+    UUID authorPublicId = author.getPublicId();
+    Pageable pageable = PageRequest.of(0, 12);
+    given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
+
+    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, 99L, pageable);
+
+    assertThat(result.getContent()).isEmpty();
+    then(quizRepository).should(never()).findByUserIdOrderByCreatedAtDesc(anyLong(), any());
+  }
+
+  @Test
+  @DisplayName("getQuizListByPublicId_비공개프로필_비로그인_빈페이지반환")
+  void getQuizListByPublicId_privateProfile_anonymousViewer_returnsEmptyPage() {
+    User author = testUser();
+    author.updateProfilePublic(false);
+    UUID authorPublicId = author.getPublicId();
+    Pageable pageable = PageRequest.of(0, 12);
+    given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
+
+    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, null, pageable);
+
+    assertThat(result.getContent()).isEmpty();
+    then(quizRepository).should(never()).findByUserIdOrderByCreatedAtDesc(anyLong(), any());
+  }
+
+  // ============ updateQuiz ============
+
+  @Test
+  @DisplayName("updateQuiz_퀴즈미존재_QUIZ_NOT_FOUND예외")
+  void updateQuiz_quizNotFound_throwsException() {
+    given(quizRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () -> quizService.updateQuiz(1L, 99L, new QuizUpdateRequest(null, null, null, null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_본인아닌사용자_QUIZ_FORBIDDEN예외")
+  void updateQuiz_notOwner_throwsForbidden() {
+    User owner = testUser();
+    Quiz quiz = testQuiz(owner);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    assertThatThrownBy(
+            () -> quizService.updateQuiz(999L, 1L, new QuizUpdateRequest(null, null, null, null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_FORBIDDEN);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_title변경_필드업데이트")
+  void updateQuiz_updateTitle_updatesField() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    QuizResponse result =
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest("새제목", null, null, null));
+
+    assertThat(result.title()).isEqualTo("새제목");
+    assertThat(quiz.getTitle()).isEqualTo("새제목");
+  }
+
+  @Test
+  @DisplayName("updateQuiz_description변경_필드업데이트")
+  void updateQuiz_updateDescription_updatesField() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    QuizResponse result =
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, "새설명", null, null));
+
+    assertThat(result.description()).isEqualTo("새설명");
+    assertThat(quiz.getDescription()).isEqualTo("새설명");
+  }
+
+  @Test
+  @DisplayName("updateQuiz_유효한카테고리변경_필드업데이트")
+  void updateQuiz_updateCategory_validKey_updatesField() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    QuizResponse result =
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, "music", null));
+
+    assertThat(result.category()).isEqualTo("music");
+    assertThat(quiz.getCategory()).isEqualTo("music");
+  }
+
+  @Test
+  @DisplayName("updateQuiz_무효한카테고리_INVALID_CATEGORY예외")
+  void updateQuiz_invalidCategory_throwsException() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    assertThatThrownBy(
+            () -> quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, "역사", null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_CATEGORY);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_다른썸네일키로변경_verify호출+이전키삭제")
+  void updateQuiz_newThumbnailKey_verifiesAndDeletesPrevious() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    ReflectionTestUtils.setField(quiz, "thumbnailKey", "old-key.png");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    willDoNothing().given(s3Service).verifyKeyOwnedAndCompleted(1L, "new-key.png");
+    willDoNothing().given(s3Service).deleteQuietly("old-key.png");
+
+    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png"));
+
+    then(s3Service).should().verifyKeyOwnedAndCompleted(1L, "new-key.png");
+    then(s3Service).should().deleteQuietly("old-key.png");
+    assertThat(quiz.getThumbnailKey()).isEqualTo("new-key.png");
+  }
+
+  @Test
+  @DisplayName("updateQuiz_이전썸네일없고새키로변경_verify호출_delete미호출")
+  void updateQuiz_newThumbnailKey_noPreviousKey_verifiesButDoesNotDelete() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    willDoNothing().given(s3Service).verifyKeyOwnedAndCompleted(1L, "new-key.png");
+
+    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png"));
+
+    then(s3Service).should().verifyKeyOwnedAndCompleted(1L, "new-key.png");
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("updateQuiz_동일썸네일키_verify호출안함_delete호출안함")
+  void updateQuiz_sameThumbnailKey_noVerifyNoDelete() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    ReflectionTestUtils.setField(quiz, "thumbnailKey", "same-key.png");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "same-key.png"));
+
+    then(s3Service).should(never()).verifyKeyOwnedAndCompleted(anyLong(), anyString());
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("updateQuiz_null필드_아무것도변경안함")
+  void updateQuiz_allNullFields_noChanges() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    QuizResponse result =
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, null));
+
+    assertThat(result.title()).isEqualTo("퀴즈 제목");
+    assertThat(result.category()).isEqualTo("game");
+    then(s3Service).should(never()).verifyKeyOwnedAndCompleted(anyLong(), anyString());
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  // ============ deleteQuiz ============
+
+  @Test
+  @DisplayName("deleteQuiz_퀴즈미존재_QUIZ_NOT_FOUND예외")
+  void deleteQuiz_quizNotFound_throwsException() {
+    given(quizRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> quizService.deleteQuiz(1L, 99L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("deleteQuiz_본인아닌사용자_QUIZ_FORBIDDEN예외")
+  void deleteQuiz_notOwner_throwsForbidden() {
+    User owner = testUser();
+    Quiz quiz = testQuiz(owner);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    assertThatThrownBy(() -> quizService.deleteQuiz(999L, 1L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_FORBIDDEN);
+  }
+
+  @Test
+  @DisplayName("deleteQuiz_정상삭제_questionDeleteByQuizId+quizDelete호출")
+  void deleteQuiz_success_deletesQuestionsAndQuiz() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of());
+    willDoNothing().given(questionRepository).deleteByQuizId(1L);
+
+    quizService.deleteQuiz(1L, 1L);
+
+    then(questionRepository).should().deleteByQuizId(1L);
+    then(quizRepository).should().delete(quiz);
+  }
+
+  @Test
+  @DisplayName("deleteQuiz_썸네일있음_S3삭제호출")
+  void deleteQuiz_withThumbnail_deletesS3Object() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    ReflectionTestUtils.setField(quiz, "thumbnailKey", "thumb.png");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of());
+    willDoNothing().given(questionRepository).deleteByQuizId(1L);
+    willDoNothing().given(s3Service).deleteQuietly("thumb.png");
+
+    quizService.deleteQuiz(1L, 1L);
+
+    then(s3Service).should().deleteQuietly("thumb.png");
+  }
+
+  @Test
+  @DisplayName("deleteQuiz_질문imageKey+answerImageKey다름_각각삭제호출")
+  void deleteQuiz_questionWithDifferentImageKeys_deletesBoth() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    Question question =
+        Question.builder()
+            .quiz(quiz)
+            .orderNum(1)
+            .imageKey("q-image.png")
+            .answerImageKey("a-image.png")
+            .questionText("문제")
+            .answer("정답")
+            .build();
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(question));
+    willDoNothing().given(questionRepository).deleteByQuizId(1L);
+    willDoNothing().given(s3Service).deleteQuietly(anyString());
+
+    quizService.deleteQuiz(1L, 1L);
+
+    then(s3Service).should().deleteQuietly("q-image.png");
+    then(s3Service).should().deleteQuietly("a-image.png");
+  }
+
+  @Test
+  @DisplayName("deleteQuiz_imageKey와answerImageKey동일_deleteQuietly한번만호출")
+  void deleteQuiz_questionWithSameImageAndAnswerKey_deletesOnce() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    Question question =
+        Question.builder()
+            .quiz(quiz)
+            .orderNum(1)
+            .imageKey("same.png")
+            .answerImageKey("same.png")
+            .questionText("문제")
+            .answer("정답")
+            .build();
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(question));
+    willDoNothing().given(questionRepository).deleteByQuizId(1L);
+    willDoNothing().given(s3Service).deleteQuietly(anyString());
+
+    quizService.deleteQuiz(1L, 1L);
+
+    then(s3Service).should(times(1)).deleteQuietly("same.png");
+  }
+
+  @Test
+  @DisplayName("deleteQuiz_imageKey없는질문_S3삭제미호출")
+  void deleteQuiz_questionWithNoImageKeys_noS3Delete() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    Question question =
+        Question.builder()
+            .quiz(quiz)
+            .orderNum(1)
+            .imageKey(null)
+            .answerImageKey(null)
+            .questionText("텍스트문제")
+            .answer("정답")
+            .build();
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(question));
+    willDoNothing().given(questionRepository).deleteByQuizId(1L);
+
+    quizService.deleteQuiz(1L, 1L);
+
+    then(s3Service).should(never()).deleteQuietly(anyString());
   }
 }

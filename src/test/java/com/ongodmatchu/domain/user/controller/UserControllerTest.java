@@ -14,6 +14,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
+import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
@@ -34,6 +36,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.mapping.JpaMetamodelMappingContext;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -51,6 +56,7 @@ class UserControllerTest {
   @Autowired private ObjectMapper objectMapper;
 
   @MockitoBean private UserService userService;
+  @MockitoBean private QuizService quizService;
   @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
   private User testUser;
@@ -351,5 +357,123 @@ class UserControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.profileImageUrl").value("https://cdn.example.com/default.png"));
+  }
+
+  // ============ GET /api/users/me/quizzes ============
+
+  @Test
+  @DisplayName("getMyQuizzes_인증된유저_200_Page반환")
+  void getMyQuizzes_authenticated_returns200WithPage() throws Exception {
+    QuizResponse quizResponse =
+        new QuizResponse(
+            1L,
+            UUID.fromString("00000000-0000-0000-0000-000000000010"),
+            "내 퀴즈",
+            "설명",
+            "game",
+            null,
+            null,
+            5,
+            "테스트유저",
+            LocalDateTime.of(2024, 1, 1, 0, 0));
+    Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));
+    given(quizService.getMyQuizList(eq(1L), any(Pageable.class))).willReturn(page);
+
+    mockMvc
+        .perform(get("/api/users/me/quizzes"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.content[0].title").value("내 퀴즈"))
+        .andExpect(jsonPath("$.data.content[0].category").value("game"))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+  }
+
+  @Test
+  @DisplayName("getMyQuizzes_퀴즈없음_빈페이지반환_200")
+  void getMyQuizzes_noQuizzes_returnsEmptyPage() throws Exception {
+    given(quizService.getMyQuizList(eq(1L), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/me/quizzes"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  // ============ GET /api/users/{publicId}/quizzes ============
+
+  @Test
+  @DisplayName("getUserQuizzes_공개프로필_비로그인뷰어_200_정상목록반환")
+  void getUserQuizzes_publicProfile_anonymousViewer_returns200() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000003");
+    QuizResponse quizResponse =
+        new QuizResponse(
+            2L,
+            UUID.fromString("00000000-0000-0000-0000-000000000011"),
+            "공개 퀴즈",
+            "설명",
+            "music",
+            null,
+            null,
+            10,
+            "공개유저",
+            LocalDateTime.of(2024, 6, 1, 0, 0));
+    Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));
+    given(quizService.getQuizListByPublicId(eq(targetPublicId), eq(null), any(Pageable.class)))
+        .willReturn(page);
+
+    SecurityContextHolder.clearContext();
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/quizzes", targetPublicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content[0].title").value("공개 퀴즈"))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+  }
+
+  @Test
+  @DisplayName("getUserQuizzes_비공개프로필_외부뷰어_200_빈페이지반환")
+  void getUserQuizzes_privateProfile_externalViewer_returnsEmptyPage() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000004");
+    given(quizService.getQuizListByPublicId(eq(targetPublicId), eq(1L), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/quizzes", targetPublicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  @Test
+  @DisplayName("getUserQuizzes_로그인뷰어_viewerUserId전달_200반환")
+  void getUserQuizzes_authenticatedViewer_passesViewerId() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000005");
+    QuizResponse quizResponse =
+        new QuizResponse(
+            3L,
+            UUID.fromString("00000000-0000-0000-0000-000000000012"),
+            "타인퀴즈",
+            "설명",
+            "etc",
+            null,
+            null,
+            3,
+            "타인유저",
+            LocalDateTime.of(2024, 3, 1, 0, 0));
+    Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));
+    given(quizService.getQuizListByPublicId(eq(targetPublicId), eq(1L), any(Pageable.class)))
+        .willReturn(page);
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/quizzes", targetPublicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content[0].title").value("타인퀴즈"));
   }
 }

@@ -1,5 +1,5 @@
 - [Test 패턴 및 관례](test-patterns.md) — 기존 테스트 코드 분석, Mockito 패턴, ReflectionTestUtils 활용
-- [QuizService 테스트 상태](quiz-service-analysis.md) — 현재 구현된 테스트 커버리지 및 추가 필요 테스트 케이스
+- [QuizService 테스트 현황](quiz-service-analysis.md) — 39개 케이스 완성 (getMyQuizList/getQuizListByPublicId/updateQuiz/deleteQuiz 포함)
 - [GradingService 테스트 패턴](codebase_patterns.md) — 완성된 테스트 (8개 케이스: exact match, AI 통합, 에러 처리)
 - [AuthService 테스트 패턴](test_patterns_auth_service.md) — ArgumentCaptor 사용법, ReflectionTestUtils, BDD Mockito 스타일
 - [UserService/JwtProvider 테스트 패턴](test_patterns_discovered.md) — Entity ID reflection, JWT setup, ErrorCode extraction, UserResponse pattern

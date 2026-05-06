@@ -43,6 +43,7 @@ public enum ErrorCode {
 
   // Quiz
   QUIZ_NOT_FOUND(HttpStatus.NOT_FOUND, "QUIZ_NOT_FOUND", "퀴즈를 찾을 수 없습니다."),
+  QUIZ_FORBIDDEN(HttpStatus.FORBIDDEN, "QUIZ_FORBIDDEN", "해당 퀴즈에 대한 권한이 없습니다."),
   INVALID_CATEGORY(HttpStatus.BAD_REQUEST, "INVALID_CATEGORY", "지원하지 않는 카테고리입니다."),
 
   // Question
