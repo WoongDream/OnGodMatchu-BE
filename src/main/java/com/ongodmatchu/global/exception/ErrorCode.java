@@ -24,6 +24,11 @@ public enum ErrorCode {
       HttpStatus.BAD_REQUEST, "PASSWORD_POLICY_VIOLATION", "비밀번호 정책을 위반했습니다."),
   PASSWORD_BREACHED(
       HttpStatus.UNPROCESSABLE_ENTITY, "PASSWORD_BREACHED", "외부에 유출된 이력이 있는 비밀번호입니다."),
+  INVALID_CURRENT_PASSWORD(
+      HttpStatus.UNAUTHORIZED, "INVALID_CURRENT_PASSWORD", "현재 비밀번호가 올바르지 않습니다."),
+  OAUTH_USER_NO_PASSWORD(
+      HttpStatus.BAD_REQUEST, "OAUTH_USER_NO_PASSWORD", "소셜 로그인 계정은 비밀번호 변경을 사용할 수 없습니다."),
+  INVALID_BIO_FORMAT(HttpStatus.BAD_REQUEST, "INVALID_BIO_FORMAT", "한 줄 소개 형식이 올바르지 않습니다."),
 
   // Email verification
   INVALID_VERIFICATION_CODE(

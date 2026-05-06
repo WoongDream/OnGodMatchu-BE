@@ -3,21 +3,36 @@ package com.ongodmatchu.domain.user.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
+import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
+import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
+import com.ongodmatchu.domain.auth.validation.PasswordValidator;
+import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
+import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.validation.BioPolicy;
 import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
 import com.ongodmatchu.domain.user.validation.NicknamePolicy;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
-import java.lang.reflect.Field;
+import com.ongodmatchu.infra.s3.PresignedUrlRequest;
+import com.ongodmatchu.infra.s3.PresignedUrlResponse;
+import com.ongodmatchu.infra.s3.S3Service;
+import com.ongodmatchu.infra.s3.UploadPolicy;
+import com.ongodmatchu.infra.s3.ViewUrlResponse;
+import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -25,204 +40,562 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
-@DisplayName("UserService 테스트")
 class UserServiceTest {
 
+  @InjectMocks private UserService userService;
   @Mock private UserRepository userRepository;
   @Mock private NicknameNormalizer nicknameNormalizer;
   @Mock private NicknamePolicy nicknamePolicy;
+  @Mock private BioPolicy bioPolicy;
+  @Mock private PasswordEncoder passwordEncoder;
+  @Mock private PasswordValidator passwordValidator;
+  @Mock private RefreshTokenRepository refreshTokenRepository;
+  @Mock private S3Service s3Service;
 
-  @InjectMocks private UserService userService;
+  private static final String DEFAULT_IMAGE_URL = "https://cdn.example.com/default.png";
+  private static final String VIEW_URL = "https://cdn.example.com/presigned-view-url";
 
   @BeforeEach
-  void setUp() {}
+  void setUp() {
+    ReflectionTestUtils.setField(userService, "defaultProfileImageUrl", DEFAULT_IMAGE_URL);
+  }
 
-  private User createUserWithId(Long id, String email, String nickname, AuthProvider provider) {
+  // ============ 헬퍼 ============
+
+  private User buildLocalUser(Long id, String nickname) {
     User user =
         User.builder()
-            .email(email)
+            .email("user@example.com")
             .nickname(nickname)
-            .password("hashedPassword123")
-            .provider(provider)
+            .password("hashed")
+            .provider(AuthProvider.LOCAL)
             .emailVerified(true)
             .build();
-    try {
-      Field idField = User.class.getDeclaredField("id");
-      idField.setAccessible(true);
-      idField.set(user, id);
-    } catch (NoSuchFieldException | IllegalAccessException e) {
-      throw new RuntimeException(e);
-    }
+    ReflectionTestUtils.setField(user, "id", id);
+    ReflectionTestUtils.setField(user, "publicId", UUID.randomUUID());
     return user;
   }
 
+  private User buildOAuthUser(Long id, String nickname) {
+    User user =
+        User.builder()
+            .email("oauth@example.com")
+            .nickname(nickname)
+            .provider(AuthProvider.GOOGLE)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(user, "id", id);
+    ReflectionTestUtils.setField(user, "publicId", UUID.randomUUID());
+    return user;
+  }
+
+  private ViewUrlResponse viewUrlResponse(String key) {
+    return new ViewUrlResponse(VIEW_URL, key, 3600L, Instant.now().plusSeconds(3600));
+  }
+
+  // ============ getMe ============
+
   @Test
-  @DisplayName("정상: 유효한 userId로 사용자 조회 시 UserResponse 반환")
-  void getMe_withValidUserId_returnsUserResponse() {
-    // given
-    Long userId = 1L;
-    User testUser = createUserWithId(userId, "test@example.com", "테스트유저", AuthProvider.LOCAL);
-    given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+  @DisplayName("getMe_이미지키없음_defaultProfileImageUrl반환")
+  void getMe_noProfileImageKey_returnsDefaultUrl() {
+    User user = buildLocalUser(1L, "홍길동");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
 
-    // when
-    UserResponse response = userService.getMe(userId);
+    UserResponse result = userService.getMe(1L);
 
-    // then
-    assertThat(response).isNotNull();
-    assertThat(response.id()).isEqualTo(testUser.getId());
-    assertThat(response.email()).isEqualTo(testUser.getEmail());
-    assertThat(response.nickname()).isEqualTo(testUser.getNickname());
-    assertThat(response.provider()).isEqualTo(testUser.getProvider().name());
+    assertThat(result.profileImageUrl()).isEqualTo(DEFAULT_IMAGE_URL);
+    assertThat(result.nickname()).isEqualTo("홍길동");
+    then(s3Service).should(never()).generateViewUrl(anyString());
   }
 
   @Test
-  @DisplayName("정상: 반환된 UserResponse에 모든 사용자 정보 포함")
-  void getMe_withValidUserId_includesAllUserInfo() {
-    // given
-    Long userId = 1L;
-    User userWithProvider =
-        createUserWithId(userId, "google@example.com", "구글유저", AuthProvider.GOOGLE);
-    given(userRepository.findById(userId)).willReturn(Optional.of(userWithProvider));
+  @DisplayName("getMe_이미지키있음_presigned_view_url반환")
+  void getMe_hasProfileImageKey_returnsPresignedViewUrl() {
+    User user = buildLocalUser(1L, "홍길동");
+    user.updateProfileImageKey("profile-images/uuid/photo.jpg");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl("profile-images/uuid/photo.jpg"))
+        .willReturn(viewUrlResponse("profile-images/uuid/photo.jpg"));
 
-    // when
-    UserResponse response = userService.getMe(userId);
+    UserResponse result = userService.getMe(1L);
 
-    // then
-    assertThat(response.id()).isEqualTo(userId);
-    assertThat(response.email()).isEqualTo("google@example.com");
-    assertThat(response.nickname()).isEqualTo("구글유저");
-    assertThat(response.provider()).isEqualTo("GOOGLE");
+    assertThat(result.profileImageUrl()).isEqualTo(VIEW_URL);
   }
 
   @Test
-  @DisplayName("에러: 존재하지 않는 userId로 조회 시 BusinessException 발생")
-  void getMe_withNonExistentUserId_throwsBusinessException() {
-    // given
-    Long userId = 999L;
-    given(userRepository.findById(userId)).willReturn(Optional.empty());
+  @DisplayName("getMe_사용자미존재_USER_NOT_FOUND예외")
+  void getMe_userNotFound_throwsException() {
+    given(userRepository.findById(99L)).willReturn(Optional.empty());
 
-    // when & then
-    assertThatThrownBy(() -> userService.getMe(userId))
+    assertThatThrownBy(() -> userService.getMe(99L))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
   }
 
+  // ============ getProfile ============
+
   @Test
-  @DisplayName("경계값: userId = 1로 조회")
-  void getMe_withUserIdOne_returnsUserResponse() {
-    // given
-    Long userId = 1L;
-    User testUser = createUserWithId(userId, "test@example.com", "테스트유저", AuthProvider.LOCAL);
-    given(userRepository.findById(userId)).willReturn(Optional.of(testUser));
+  @DisplayName("getProfile_공개프로필_외부뷰어_UserResponse반환")
+  void getProfile_publicProfile_externalViewer_returnsUserResponse() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
 
-    // when
-    UserResponse response = userService.getMe(userId);
+    Object result = userService.getProfile(publicId, 99L);
 
-    // then
-    assertThat(response).isNotNull();
-    assertThat(response.id()).isEqualTo(1L);
+    assertThat(result).isInstanceOf(UserResponse.class);
   }
 
   @Test
-  @DisplayName("경계값: userId = Long.MAX_VALUE로 조회")
-  void getMe_withMaxLongValue_throwsBusinessException() {
-    // given
-    Long userId = Long.MAX_VALUE;
-    given(userRepository.findById(userId)).willReturn(Optional.empty());
+  @DisplayName("getProfile_공개프로필_비로그인_UserResponse반환")
+  void getProfile_publicProfile_anonymousViewer_returnsUserResponse() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
 
-    // when & then
-    assertThatThrownBy(() -> userService.getMe(userId))
+    Object result = userService.getProfile(publicId, null);
+
+    assertThat(result).isInstanceOf(UserResponse.class);
+  }
+
+  @Test
+  @DisplayName("getProfile_비공개프로필_본인조회_UserResponse반환")
+  void getProfile_privateProfile_ownerViewer_returnsUserResponse() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "비공개본인");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.updateProfilePublic(false);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+
+    Object result = userService.getProfile(publicId, 1L);
+
+    assertThat(result).isInstanceOf(UserResponse.class);
+  }
+
+  @Test
+  @DisplayName("getProfile_비공개프로필_외부뷰어_PublicUserResponse반환")
+  void getProfile_privateProfile_externalViewer_returnsPublicUserResponse() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "비공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.updateProfilePublic(false);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+
+    Object result = userService.getProfile(publicId, 99L);
+
+    assertThat(result).isInstanceOf(PublicUserResponse.class);
+    PublicUserResponse publicResponse = (PublicUserResponse) result;
+    assertThat(publicResponse.isProfilePublic()).isFalse();
+  }
+
+  @Test
+  @DisplayName("getProfile_비공개프로필_비로그인_PublicUserResponse반환")
+  void getProfile_privateProfile_anonymousViewer_returnsPublicUserResponse() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "비공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.updateProfilePublic(false);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+
+    Object result = userService.getProfile(publicId, null);
+
+    assertThat(result).isInstanceOf(PublicUserResponse.class);
+  }
+
+  @Test
+  @DisplayName("getProfile_사용자미존재_USER_NOT_FOUND예외")
+  void getProfile_userNotFound_throwsException() {
+    UUID unknownId = UUID.randomUUID();
+    given(userRepository.findByPublicId(unknownId)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> userService.getProfile(unknownId, null))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
   }
 
-  @Test
-  @DisplayName("에러: 사용자 조회 실패 시 USER_NOT_FOUND 에러코드 확인")
-  void getMe_withInvalidUserId_errorCodeIsUserNotFound() {
-    // given
-    Long userId = 100L;
-    given(userRepository.findById(userId)).willReturn(Optional.empty());
-
-    // when & then
-    assertThatThrownBy(() -> userService.getMe(userId))
-        .isInstanceOf(BusinessException.class)
-        .hasMessage(ErrorCode.USER_NOT_FOUND.getMessage());
-  }
-
-  // ── updateMe ──────────────────────────────────────────────────────────────
+  // ============ updateMe ============
 
   @Test
-  @DisplayName("updateMe 정상: 새로운 닉네임으로 변경 후 UserResponse의 nickname이 새 값")
-  void updateMe_withNewNickname_returnsUpdatedUserResponse() {
-    // given
-    Long userId = 1L;
-    User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
-    UserUpdateRequest request = new UserUpdateRequest("새닉네임");
-    given(userRepository.findById(userId)).willReturn(Optional.of(user));
+  @DisplayName("updateMe_닉네임변경_정상처리")
+  void updateMe_nicknameChange_success() {
+    User user = buildLocalUser(1L, "기존닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
     given(nicknameNormalizer.normalize("새닉네임")).willReturn("새닉네임");
     given(userRepository.existsByNickname("새닉네임")).willReturn(false);
 
-    // when
-    UserResponse response = userService.updateMe(userId, request);
+    UserResponse result = userService.updateMe(1L, new UserUpdateRequest("새닉네임", null, null));
 
-    // then
-    assertThat(response.nickname()).isEqualTo("새닉네임");
+    assertThat(result.nickname()).isEqualTo("새닉네임");
+    then(nicknamePolicy).should().enforce("새닉네임");
   }
 
   @Test
-  @DisplayName("updateMe 에러: existsByNickname이 true이면 NICKNAME_ALREADY_EXISTS BusinessException 발생")
-  void updateMe_withDuplicateNickname_throwsNicknameAlreadyExists() {
-    // given
-    Long userId = 1L;
-    User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
-    UserUpdateRequest request = new UserUpdateRequest("중복닉네임");
-    given(userRepository.findById(userId)).willReturn(Optional.of(user));
+  @DisplayName("updateMe_본인닉네임동일_중복체크스킵")
+  void updateMe_sameNickname_skipsDuplicateCheck() {
+    User user = buildLocalUser(1L, "동일닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(nicknameNormalizer.normalize("동일닉네임")).willReturn("동일닉네임");
+
+    userService.updateMe(1L, new UserUpdateRequest("동일닉네임", null, null));
+
+    then(userRepository).should(never()).existsByNickname(anyString());
+  }
+
+  @Test
+  @DisplayName("updateMe_닉네임중복_NICKNAME_ALREADY_EXISTS예외")
+  void updateMe_duplicateNickname_throwsException() {
+    User user = buildLocalUser(1L, "기존닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
     given(nicknameNormalizer.normalize("중복닉네임")).willReturn("중복닉네임");
     given(userRepository.existsByNickname("중복닉네임")).willReturn(true);
 
-    // when & then
-    assertThatThrownBy(() -> userService.updateMe(userId, request))
+    assertThatThrownBy(() -> userService.updateMe(1L, new UserUpdateRequest("중복닉네임", null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
   }
 
   @Test
-  @DisplayName("updateMe 정상: 본인 기존 닉네임과 동일하면 existsByNickname 호출 없이 통과")
-  void updateMe_withSameNickname_skipsExistsByNicknameCheck() {
-    // given
-    Long userId = 1L;
-    User user = createUserWithId(userId, "test@example.com", "기존닉네임", AuthProvider.LOCAL);
-    UserUpdateRequest request = new UserUpdateRequest("기존닉네임");
-    given(userRepository.findById(userId)).willReturn(Optional.of(user));
-    given(nicknameNormalizer.normalize("기존닉네임")).willReturn("기존닉네임");
+  @DisplayName("updateMe_DataIntegrityViolation닉네임포함_NICKNAME_ALREADY_EXISTS예외")
+  void updateMe_dataIntegrityViolationWithNickname_convertsException() {
+    User user = buildLocalUser(1L, "기존닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(nicknameNormalizer.normalize("레이스닉네임")).willReturn("레이스닉네임");
+    given(userRepository.existsByNickname("레이스닉네임")).willReturn(false);
+    RuntimeException cause =
+        new RuntimeException("ERROR: duplicate key violates constraint nickname");
+    DataIntegrityViolationException dive =
+        new DataIntegrityViolationException("constraint violation", cause);
+    willThrow(dive).given(userRepository).flush();
 
-    // when
-    UserResponse response = userService.updateMe(userId, request);
-
-    // then
-    assertThat(response.nickname()).isEqualTo("기존닉네임");
-    then(userRepository).should(never()).existsByNickname(any());
+    assertThatThrownBy(() -> userService.updateMe(1L, new UserUpdateRequest("레이스닉네임", null, null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
   }
 
   @Test
-  @DisplayName(
-      "updateMe 에러: 존재하지 않는 userId이면 USER_NOT_FOUND BusinessException, existsByNickname 호출 없음")
-  void updateMe_withNonExistentUserId_throwsUserNotFound() {
-    // given
-    Long userId = 999L;
-    UserUpdateRequest request = new UserUpdateRequest("새닉네임");
-    given(userRepository.findById(userId)).willReturn(Optional.empty());
+  @DisplayName("updateMe_DataIntegrityViolation닉네임미포함_재throw")
+  void updateMe_dataIntegrityViolationWithoutNickname_rethrows() {
+    User user = buildLocalUser(1L, "기존닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(nicknameNormalizer.normalize("새닉네임")).willReturn("새닉네임");
+    given(userRepository.existsByNickname("새닉네임")).willReturn(false);
+    RuntimeException cause = new RuntimeException("ERROR: duplicate key violates constraint email");
+    DataIntegrityViolationException dive =
+        new DataIntegrityViolationException("constraint violation", cause);
+    willThrow(dive).given(userRepository).flush();
 
-    // when & then
-    assertThatThrownBy(() -> userService.updateMe(userId, request))
+    assertThatThrownBy(() -> userService.updateMe(1L, new UserUpdateRequest("새닉네임", null, null)))
+        .isInstanceOf(DataIntegrityViolationException.class);
+  }
+
+  @Test
+  @DisplayName("updateMe_bio변경_정상처리")
+  void updateMe_bioChange_success() {
+    User user = buildLocalUser(1L, "닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(bioPolicy.normalize("안녕하세요")).willReturn("안녕하세요");
+
+    userService.updateMe(1L, new UserUpdateRequest(null, "안녕하세요", null));
+
+    then(bioPolicy).should().normalize("안녕하세요");
+    then(bioPolicy).should().enforce("안녕하세요");
+  }
+
+  @Test
+  @DisplayName("updateMe_isProfilePublic변경_정상처리")
+  void updateMe_profilePublicToggle_success() {
+    User user = buildLocalUser(1L, "닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    UserResponse result = userService.updateMe(1L, new UserUpdateRequest(null, null, false));
+
+    assertThat(result.isProfilePublic()).isFalse();
+  }
+
+  @Test
+  @DisplayName("updateMe_모든필드null_변경없음")
+  void updateMe_allFieldsNull_noChange() {
+    User user = buildLocalUser(1L, "기존닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    UserResponse result = userService.updateMe(1L, new UserUpdateRequest(null, null, null));
+
+    assertThat(result.nickname()).isEqualTo("기존닉네임");
+    then(nicknameNormalizer).should(never()).normalize(anyString());
+    then(bioPolicy).should(never()).normalize(anyString());
+  }
+
+  @Test
+  @DisplayName("updateMe_사용자미존재_USER_NOT_FOUND예외")
+  void updateMe_userNotFound_throwsException() {
+    given(userRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> userService.updateMe(99L, new UserUpdateRequest("닉네임", null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
-    then(userRepository).should(never()).existsByNickname(any());
+  }
+
+  // ============ changePassword ============
+
+  @Test
+  @DisplayName("changePassword_OAuth유저_OAUTH_USER_NO_PASSWORD예외")
+  void changePassword_oauthUser_throwsException() {
+    User oauthUser = buildOAuthUser(1L, "소셜유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(oauthUser));
+
+    assertThatThrownBy(
+            () ->
+                userService.changePassword(
+                    1L, new PasswordChangeRequest("current", "newPassword123!")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.OAUTH_USER_NO_PASSWORD);
+
+    then(refreshTokenRepository).should(never()).deleteByUserId(any());
+  }
+
+  @Test
+  @DisplayName("changePassword_password필드null_OAUTH_USER_NO_PASSWORD예외")
+  void changePassword_nullPassword_throwsException() {
+    User user =
+        User.builder()
+            .email("user@example.com")
+            .nickname("유저")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(user, "id", 1L);
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    assertThatThrownBy(
+            () ->
+                userService.changePassword(
+                    1L, new PasswordChangeRequest("current", "newPassword123!")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.OAUTH_USER_NO_PASSWORD);
+  }
+
+  @Test
+  @DisplayName("changePassword_현재비밀번호불일치_INVALID_CURRENT_PASSWORD예외")
+  void changePassword_wrongCurrentPassword_throwsException() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(passwordEncoder.matches("wrong", "hashed")).willReturn(false);
+
+    assertThatThrownBy(
+            () -> userService.changePassword(1L, new PasswordChangeRequest("wrong", "newPass123!")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_CURRENT_PASSWORD);
+
+    then(refreshTokenRepository).should(never()).deleteByUserId(any());
+  }
+
+  @Test
+  @DisplayName("changePassword_정상_비밀번호업데이트_리프레시토큰삭제")
+  void changePassword_success_updatesPasswordAndDeletesTokens() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(passwordEncoder.matches("currentPass", "hashed")).willReturn(true);
+    given(passwordEncoder.encode("newPassword123!")).willReturn("newHashed");
+    willDoNothing().given(passwordValidator).validate(anyString(), anyString(), anyString());
+
+    userService.changePassword(1L, new PasswordChangeRequest("currentPass", "newPassword123!"));
+
+    assertThat(user.getPassword()).isEqualTo("newHashed");
+    then(refreshTokenRepository).should().deleteByUserId(1L);
+  }
+
+  @Test
+  @DisplayName("changePassword_사용자미존재_USER_NOT_FOUND예외")
+  void changePassword_userNotFound_throwsException() {
+    given(userRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(
+            () ->
+                userService.changePassword(
+                    99L, new PasswordChangeRequest("current", "newPassword123!")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  // ============ issueProfileImageUploadUrl ============
+
+  @Test
+  @DisplayName("issueProfileImageUploadUrl_S3Service위임검증")
+  void issueProfileImageUploadUrl_delegatesToS3Service() {
+    PresignedUrlRequest request = new PresignedUrlRequest("photo.jpg", "image/jpeg", 1024L);
+    PresignedUrlResponse expected = new PresignedUrlResponse("https://s3.presigned", "key", 600L);
+    given(s3Service.generateProfileImageUploadUrl(1L, request)).willReturn(expected);
+
+    PresignedUrlResponse result = userService.issueProfileImageUploadUrl(1L, request);
+
+    assertThat(result).isEqualTo(expected);
+    then(s3Service).should().generateProfileImageUploadUrl(1L, request);
+  }
+
+  // ============ applyProfileImage ============
+
+  @Test
+  @DisplayName("applyProfileImage_유효한키_이미지키갱신")
+  void applyProfileImage_validKey_updatesProfileImageKey() {
+    User user = buildLocalUser(1L, "유저");
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/photo.jpg";
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(key)).willReturn(viewUrlResponse(key));
+
+    userService.applyProfileImage(1L, key);
+
+    assertThat(user.getProfileImageKey()).isEqualTo(key);
+    then(s3Service).should().completeUpload(1L, key);
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_이전키와다름_이전키삭제")
+  void applyProfileImage_differentPreviousKey_deletesPreviousKey() {
+    User user = buildLocalUser(1L, "유저");
+    String oldKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/old.jpg";
+    String newKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/new.jpg";
+    user.updateProfileImageKey(oldKey);
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(newKey)).willReturn(viewUrlResponse(newKey));
+
+    userService.applyProfileImage(1L, newKey);
+
+    then(s3Service).should().deleteQuietly(oldKey);
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_이전키없음_deleteQuietly미호출")
+  void applyProfileImage_noPreviousKey_doesNotDeleteAnything() {
+    User user = buildLocalUser(1L, "유저");
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/photo.jpg";
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(key)).willReturn(viewUrlResponse(key));
+
+    userService.applyProfileImage(1L, key);
+
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_이전키와동일_deleteQuietly미호출")
+  void applyProfileImage_sameKeyAsExisting_doesNotDeleteAnything() {
+    User user = buildLocalUser(1L, "유저");
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/same.jpg";
+    user.updateProfileImageKey(key);
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(key)).willReturn(viewUrlResponse(key));
+
+    userService.applyProfileImage(1L, key);
+
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_잘못된prefix_INVALID_UPLOAD_KEY예외")
+  void applyProfileImage_invalidKeyPrefix_throwsException() {
+    assertThatThrownBy(() -> userService.applyProfileImage(1L, "quiz-images/uuid/photo.jpg"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_UPLOAD_KEY);
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_null키_INVALID_UPLOAD_KEY예외")
+  void applyProfileImage_nullKey_throwsException() {
+    assertThatThrownBy(() -> userService.applyProfileImage(1L, null))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_UPLOAD_KEY);
+  }
+
+  // ============ deleteProfileImage ============
+
+  @Test
+  @DisplayName("deleteProfileImage_이미지키있음_clearAndDeleteQuietly호출")
+  void deleteProfileImage_hasKey_clearsAndDeletes() {
+    User user = buildLocalUser(1L, "유저");
+    user.updateProfileImageKey("profile-images/uuid/photo.jpg");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    userService.deleteProfileImage(1L);
+
+    assertThat(user.getProfileImageKey()).isNull();
+    then(s3Service).should().deleteQuietly("profile-images/uuid/photo.jpg");
+  }
+
+  @Test
+  @DisplayName("deleteProfileImage_이미지키없음_S3호출없음_no_op")
+  void deleteProfileImage_noKey_doesNothing() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    userService.deleteProfileImage(1L);
+
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("deleteProfileImage_사용자미존재_USER_NOT_FOUND예외")
+  void deleteProfileImage_userNotFound_throwsException() {
+    given(userRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> userService.deleteProfileImage(99L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  // ============ calcActiveDays (private, getMe를 통해 간접 테스트) ============
+
+  @Test
+  @DisplayName("calcActiveDays_createdAt_null이면_0반환")
+  void calcActiveDays_nullCreatedAt_returnsZero() {
+    User user = buildLocalUser(1L, "유저");
+    // createdAt은 BaseTimeEntity @CreatedDate로만 세팅 — null 상태 유지
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    UserResponse result = userService.getMe(1L);
+
+    assertThat(result.activeDays()).isZero();
+  }
+
+  @Test
+  @DisplayName("calcActiveDays_미래createdAt이면_0반환")
+  void calcActiveDays_futureCreatedAt_returnsZero() {
+    User user = buildLocalUser(1L, "유저");
+    ReflectionTestUtils.setField(user, "createdAt", LocalDateTime.now().plusDays(1));
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    UserResponse result = userService.getMe(1L);
+
+    assertThat(result.activeDays()).isZero();
+  }
+
+  @Test
+  @DisplayName("calcActiveDays_7일전createdAt이면_7반환")
+  void calcActiveDays_sevenDaysAgo_returnsSeven() {
+    User user = buildLocalUser(1L, "유저");
+    ReflectionTestUtils.setField(user, "createdAt", LocalDateTime.now().minusDays(7));
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    UserResponse result = userService.getMe(1L);
+
+    assertThat(result.activeDays()).isEqualTo(7L);
   }
 }

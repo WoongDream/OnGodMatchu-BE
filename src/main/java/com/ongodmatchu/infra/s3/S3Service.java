@@ -14,12 +14,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectTaggingRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectResponse;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequest;
@@ -43,6 +45,17 @@ public class S3Service {
 
   @Transactional
   public PresignedUrlResponse generateUploadUrl(Long userId, PresignedUrlRequest request) {
+    return issueUpload(userId, request, UploadPolicy.QUIZ_IMAGES_PREFIX);
+  }
+
+  @Transactional
+  public PresignedUrlResponse generateProfileImageUploadUrl(
+      Long userId, PresignedUrlRequest request) {
+    return issueUpload(userId, request, UploadPolicy.PROFILE_IMAGES_PREFIX);
+  }
+
+  private PresignedUrlResponse issueUpload(
+      Long userId, PresignedUrlRequest request, String prefix) {
     if (!UploadPolicy.isAllowedContentType(request.contentType())) {
       throw new BusinessException(ErrorCode.INVALID_FILE_TYPE);
     }
@@ -55,7 +68,7 @@ public class S3Service {
             .findById(userId)
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-    String key = buildQuizImageKey(user.getPublicId(), request.contentType());
+    String key = buildKey(prefix, user.getPublicId(), request.contentType());
 
     PutObjectPresignRequest presignRequest =
         PutObjectPresignRequest.builder()
@@ -151,8 +164,24 @@ public class S3Service {
     s3Client.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
   }
 
-  private String buildQuizImageKey(UUID userPublicId, String contentType) {
+  /** 서버가 직접 생성한 컨텐츠를 S3 에 업로드한다. presigned/UploadMeta 검증 흐름을 거치지 않는 내부용. */
+  public void putObject(String key, byte[] body, String contentType) {
+    s3Client.putObject(
+        PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType).build(),
+        RequestBody.fromBytes(body));
+  }
+
+  /** 객체가 없거나 삭제에 실패해도 호출자 흐름을 막지 않는다. */
+  public void deleteQuietly(String key) {
+    if (key == null) return;
+    try {
+      delete(key);
+    } catch (RuntimeException ignored) {
+    }
+  }
+
+  private String buildKey(String prefix, UUID userPublicId, String contentType) {
     String ext = UploadPolicy.extensionFor(contentType);
-    return UploadPolicy.QUIZ_IMAGES_PREFIX + "/" + userPublicId + "/" + UUID.randomUUID() + ext;
+    return prefix + "/" + userPublicId + "/" + UUID.randomUUID() + ext;
   }
 }

@@ -51,9 +51,9 @@ class NicknamePolicyTest {
   }
 
   @Test
-  @DisplayName("enforce_경계값20자_통과")
+  @DisplayName("enforce_경계값10자_통과")
   void enforce_maxLengthBoundary_doesNotThrow() {
-    nicknamePolicy.enforce("a".repeat(20));
+    nicknamePolicy.enforce("a".repeat(10));
   }
 
   // ============ enforce — 실패 ============
@@ -95,9 +95,9 @@ class NicknamePolicyTest {
   }
 
   @Test
-  @DisplayName("enforce_길이21자_너무긴_예외")
+  @DisplayName("enforce_길이11자_너무긴_예외")
   void enforce_tooLong_throwsInvalidFormat() {
-    assertThatThrownBy(() -> nicknamePolicy.enforce("a".repeat(21)))
+    assertThatThrownBy(() -> nicknamePolicy.enforce("a".repeat(11)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);

@@ -97,7 +97,19 @@ class AuthControllerTest {
   @DisplayName("회원가입_정상_201_user_및_토큰포함")
   void signup_success_returns201WithTokens() throws Exception {
     SignupResponse response =
-        new SignupResponse(new UserResponse(1L, "u@example.com", "닉네임", "LOCAL"), "AT", "RT");
+        new SignupResponse(
+            new UserResponse(
+                java.util.UUID.randomUUID(),
+                "닉네임",
+                "u@example.com",
+                "https://cdn.example.com/default.png",
+                null,
+                java.time.LocalDateTime.now(),
+                0L,
+                true,
+                "LOCAL"),
+            "AT",
+            "RT");
     given(authService.signup(any(SignupRequest.class))).willReturn(response);
 
     String body =
@@ -110,7 +122,7 @@ class AuthControllerTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.accessToken").value("AT"))
         .andExpect(jsonPath("$.data.refreshToken").value("RT"))
-        .andExpect(jsonPath("$.data.user.id").value(1))
+        .andExpect(jsonPath("$.data.user.userId").exists())
         .andExpect(jsonPath("$.data.user.email").value("u@example.com"))
         .andExpect(jsonPath("$.data.user.nickname").value("닉네임"));
   }

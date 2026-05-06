@@ -18,6 +18,8 @@ public final class UploadPolicy {
 
   public static final String QUIZ_IMAGES_PREFIX = "quiz-images";
 
+  public static final String PROFILE_IMAGES_PREFIX = "profile-images";
+
   /** PUT 시 부착되는 태그. 라이프사이클 룰 (1day expire) 의 필터 키와 일치해야 한다. */
   public static final String PENDING_TAG_KEY = "status";
 

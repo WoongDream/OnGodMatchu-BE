@@ -6,3 +6,6 @@
 - [HibpClient RestClient 테스트 패턴](hibp_restclient_testing.md) — 생성자 내부에서 builder.build()하는 컴포넌트에 ReflectionTestUtils로 RestClient 교체
 - [WebMvcTest JPA Auditing 충돌](webmvctest_jpa_auditing.md) — @WebMvcTest 슬라이스에서 반드시 @MockitoBean JpaMetamodelMappingContext 선언
 - [Nickname 의존성 mock 패턴](nickname_validation_patterns.md) — UserService/AuthService 테스트에 NicknameNormalizer·NicknamePolicy mock 필수
+- [WebMvcTest @AuthenticationPrincipal 주입](webmvctest_security_principal.md) — addFilters=false에서 SecurityContextHolder 직접 세팅 필요
+- [void 메서드 mock 패턴](void_method_mock_pattern.md) — flush() 등 void에 예외 stubbing 시 willThrow().given().method() 사용
+- [S3Service generateViewUrl stub](s3service_generateviewurl_stub.md) — applyProfileImage 테스트에서 toResponse()가 generateViewUrl 호출하므로 stub 필수
