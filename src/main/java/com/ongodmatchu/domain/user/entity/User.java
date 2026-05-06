@@ -10,6 +10,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Builder;
@@ -46,6 +47,16 @@ public class User extends BaseTimeEntity {
   @Column(nullable = false)
   private boolean emailVerified;
 
+  private String profileImageKey;
+
+  @Column(length = 100)
+  private String bio;
+
+  @Column(nullable = false)
+  private boolean isProfilePublic = true;
+
+  private LocalDateTime lastActiveAt;
+
   @Builder
   private User(
       String email,
@@ -60,6 +71,7 @@ public class User extends BaseTimeEntity {
     this.provider = provider;
     this.providerId = providerId;
     this.emailVerified = emailVerified;
+    this.isProfilePublic = true;
   }
 
   @PrePersist
@@ -75,5 +87,29 @@ public class User extends BaseTimeEntity {
 
   public void updateNickname(String nickname) {
     this.nickname = nickname;
+  }
+
+  public void updateBio(String bio) {
+    this.bio = bio;
+  }
+
+  public void updateProfilePublic(boolean isProfilePublic) {
+    this.isProfilePublic = isProfilePublic;
+  }
+
+  public void updateProfileImageKey(String profileImageKey) {
+    this.profileImageKey = profileImageKey;
+  }
+
+  public void clearProfileImage() {
+    this.profileImageKey = null;
+  }
+
+  public void updatePassword(String encodedPassword) {
+    this.password = encodedPassword;
+  }
+
+  public void touchLastActiveAt() {
+    this.lastActiveAt = LocalDateTime.now();
   }
 }

@@ -56,6 +56,8 @@ class AuthServiceTest {
   @Mock private NicknameNormalizer nicknameNormalizer;
   @Mock private NicknamePolicy nicknamePolicy;
   @Mock private VerificationCodeRateLimiter rateLimiter;
+  @Mock private com.ongodmatchu.domain.user.service.ProfileImageInitializer profileImageInitializer;
+  @Mock private com.ongodmatchu.infra.s3.S3Service s3Service;
 
   private static EmailVerification validVerification(String email, String code) {
     return EmailVerification.builder()
@@ -210,6 +212,7 @@ class AuthServiceTest {
             inv -> {
               User u = inv.getArgument(0);
               ReflectionTestUtils.setField(u, "id", 7L);
+              ReflectionTestUtils.setField(u, "publicId", java.util.UUID.randomUUID());
               return u;
             });
     given(jwtProvider.generateAccessToken(7L)).willReturn("AT");
@@ -222,7 +225,7 @@ class AuthServiceTest {
     assertThat(response.refreshToken()).isEqualTo("RT");
     assertThat(response.user().email()).isEqualTo("new@example.com");
     assertThat(response.user().nickname()).isEqualTo("새사용자");
-    assertThat(response.user().id()).isEqualTo(7L);
+    assertThat(response.user().userId()).isNotNull();
 
     ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
     then(userRepository).should().saveAndFlush(captor.capture());

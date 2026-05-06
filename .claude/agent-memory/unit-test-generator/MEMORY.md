@@ -1,8 +1,11 @@
 - [Test 패턴 및 관례](test-patterns.md) — 기존 테스트 코드 분석, Mockito 패턴, ReflectionTestUtils 활용
-- [QuizService 테스트 상태](quiz-service-analysis.md) — 현재 구현된 테스트 커버리지 및 추가 필요 테스트 케이스
+- [QuizService 테스트 현황](quiz-service-analysis.md) — 39개 케이스 완성 (getMyQuizList/getQuizListByPublicId/updateQuiz/deleteQuiz 포함)
 - [GradingService 테스트 패턴](codebase_patterns.md) — 완성된 테스트 (8개 케이스: exact match, AI 통합, 에러 처리)
 - [AuthService 테스트 패턴](test_patterns_auth_service.md) — ArgumentCaptor 사용법, ReflectionTestUtils, BDD Mockito 스타일
 - [UserService/JwtProvider 테스트 패턴](test_patterns_discovered.md) — Entity ID reflection, JWT setup, ErrorCode extraction, UserResponse pattern
 - [HibpClient RestClient 테스트 패턴](hibp_restclient_testing.md) — 생성자 내부에서 builder.build()하는 컴포넌트에 ReflectionTestUtils로 RestClient 교체
 - [WebMvcTest JPA Auditing 충돌](webmvctest_jpa_auditing.md) — @WebMvcTest 슬라이스에서 반드시 @MockitoBean JpaMetamodelMappingContext 선언
 - [Nickname 의존성 mock 패턴](nickname_validation_patterns.md) — UserService/AuthService 테스트에 NicknameNormalizer·NicknamePolicy mock 필수
+- [WebMvcTest @AuthenticationPrincipal 주입](webmvctest_security_principal.md) — addFilters=false에서 SecurityContextHolder 직접 세팅 필요
+- [void 메서드 mock 패턴](void_method_mock_pattern.md) — flush() 등 void에 예외 stubbing 시 willThrow().given().method() 사용
+- [S3Service generateViewUrl stub](s3service_generateviewurl_stub.md) — applyProfileImage 테스트에서 toResponse()가 generateViewUrl 호출하므로 stub 필수

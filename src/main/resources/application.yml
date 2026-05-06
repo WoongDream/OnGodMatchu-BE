@@ -69,6 +69,8 @@ jwt:
 
 app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
+  profile:
+    default-image-url: ${PROFILE_DEFAULT_IMAGE_URL:https://ongodmatchu-static.s3.ap-northeast-2.amazonaws.com/profile-images/default.png}
 
 aws:
   access-key: ${AWS_ACCESS_KEY}
