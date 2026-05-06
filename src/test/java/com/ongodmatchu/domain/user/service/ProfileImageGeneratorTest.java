@@ -77,22 +77,18 @@ class ProfileImageGeneratorTest {
     assertThat(svg).contains("?");
   }
 
-  // ============ 색상 결정성 ============
+  // ============ 색상 랜덤성 ============
 
   @Test
-  @DisplayName("generateSvg_동일닉네임_항상동일색상")
-  void generateSvg_sameNickname_alwaysSameColor() {
-    byte[] result1 = generator.generateSvg("홍길동");
-    byte[] result2 = generator.generateSvg("홍길동");
-
-    String svg1 = new String(result1, StandardCharsets.UTF_8);
-    String svg2 = new String(result2, StandardCharsets.UTF_8);
-
-    // fill 속성으로 배경색 추출
-    String color1 = extractFillColor(svg1);
-    String color2 = extractFillColor(svg2);
-
-    assertThat(color1).isEqualTo(color2);
+  @DisplayName("generateSvg_동일닉네임_여러번호출시_여러색상이등장")
+  void generateSvg_sameNickname_producesMultipleColors() {
+    java.util.Set<String> colors = new java.util.HashSet<>();
+    for (int i = 0; i < 50; i++) {
+      String svg = new String(generator.generateSvg("홍길동"), StandardCharsets.UTF_8);
+      colors.add(extractFillColor(svg));
+    }
+    // 팔레트가 10색이고 50회면 확률적으로 2색 이상 나와야 함 (랜덤 보장 검증)
+    assertThat(colors).hasSizeGreaterThan(1);
   }
 
   @Test

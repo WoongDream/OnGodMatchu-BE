@@ -7,6 +7,9 @@ public final class UploadPolicy {
 
   public static final long MAX_SIZE_BYTES = 5L * 1024 * 1024;
 
+  /** 프로필 이미지 전용 한도. 표시 영역이 작아 퀴즈 이미지보다 빡빡하게 둔다. */
+  public static final long PROFILE_MAX_SIZE_BYTES = 3L * 1024 * 1024;
+
   public static final Set<String> ALLOWED_CONTENT_TYPES =
       Set.of("image/jpeg", "image/png", "image/webp");
 
@@ -39,5 +42,9 @@ public final class UploadPolicy {
 
   public static boolean isAllowedSize(Long sizeBytes) {
     return sizeBytes == null || sizeBytes <= MAX_SIZE_BYTES;
+  }
+
+  public static boolean isAllowedProfileSize(Long sizeBytes) {
+    return sizeBytes == null || sizeBytes <= PROFILE_MAX_SIZE_BYTES;
   }
 }

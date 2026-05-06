@@ -40,6 +40,7 @@ public class UserService {
   private final PasswordValidator passwordValidator;
   private final RefreshTokenRepository refreshTokenRepository;
   private final S3Service s3Service;
+  private final ProfileImageGenerator profileImageGenerator;
 
   @Value("${app.profile.default-image-url}")
   private String defaultProfileImageUrl;
@@ -133,6 +134,27 @@ public class UserService {
     String previousKey = user.getProfileImageKey();
     user.updateProfileImageKey(key);
     if (previousKey != null && !previousKey.equals(key)) {
+      s3Service.deleteQuietly(previousKey);
+    }
+    return toResponse(user);
+  }
+
+  /** "기본 이미지" 버튼 — 호출마다 새 랜덤 색 SVG 를 생성해 적용한다. 이전 키는 best-effort 삭제. */
+  @Transactional
+  public UserResponse regenerateDefaultProfileImage(Long userId) {
+    User user = findUserById(userId);
+    String previousKey = user.getProfileImageKey();
+    String newKey =
+        UploadPolicy.PROFILE_IMAGES_PREFIX
+            + "/"
+            + user.getPublicId()
+            + "/"
+            + UUID.randomUUID()
+            + ".svg";
+    byte[] body = profileImageGenerator.generateSvg(user.getNickname());
+    s3Service.putObject(newKey, body, ProfileImageGenerator.CONTENT_TYPE);
+    user.updateProfileImageKey(newKey);
+    if (previousKey != null) {
       s3Service.deleteQuietly(previousKey);
     }
     return toResponse(user);

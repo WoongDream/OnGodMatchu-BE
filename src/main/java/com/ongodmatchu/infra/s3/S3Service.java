@@ -45,21 +45,25 @@ public class S3Service {
 
   @Transactional
   public PresignedUrlResponse generateUploadUrl(Long userId, PresignedUrlRequest request) {
-    return issueUpload(userId, request, UploadPolicy.QUIZ_IMAGES_PREFIX);
+    return issueUpload(userId, request, UploadPolicy.QUIZ_IMAGES_PREFIX, false);
   }
 
   @Transactional
   public PresignedUrlResponse generateProfileImageUploadUrl(
       Long userId, PresignedUrlRequest request) {
-    return issueUpload(userId, request, UploadPolicy.PROFILE_IMAGES_PREFIX);
+    return issueUpload(userId, request, UploadPolicy.PROFILE_IMAGES_PREFIX, true);
   }
 
   private PresignedUrlResponse issueUpload(
-      Long userId, PresignedUrlRequest request, String prefix) {
+      Long userId, PresignedUrlRequest request, String prefix, boolean profileLimit) {
     if (!UploadPolicy.isAllowedContentType(request.contentType())) {
       throw new BusinessException(ErrorCode.INVALID_FILE_TYPE);
     }
-    if (!UploadPolicy.isAllowedSize(request.sizeBytes())) {
+    boolean sizeOk =
+        profileLimit
+            ? UploadPolicy.isAllowedProfileSize(request.sizeBytes())
+            : UploadPolicy.isAllowedSize(request.sizeBytes());
+    if (!sizeOk) {
       throw new BusinessException(ErrorCode.INVALID_FILE_SIZE);
     }
 
@@ -135,7 +139,11 @@ public class S3Service {
     if (!UploadPolicy.isAllowedContentType(head.contentType())) {
       throw new BusinessException(ErrorCode.INVALID_FILE_TYPE);
     }
-    if (!UploadPolicy.isAllowedSize(head.contentLength())) {
+    boolean sizeOk =
+        key.startsWith(UploadPolicy.PROFILE_IMAGES_PREFIX + "/")
+            ? UploadPolicy.isAllowedProfileSize(head.contentLength())
+            : UploadPolicy.isAllowedSize(head.contentLength());
+    if (!sizeOk) {
       throw new BusinessException(ErrorCode.INVALID_FILE_SIZE);
     }
 

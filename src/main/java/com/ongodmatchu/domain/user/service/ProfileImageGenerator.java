@@ -1,9 +1,13 @@
 package com.ongodmatchu.domain.user.service;
 
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
 import org.springframework.stereotype.Component;
 
-/** 닉네임 첫 1자 + 단색 배경의 SVG 이니셜 이미지를 생성한다. 클라이언트 폰트 렌더링에 위임하므로 컨테이너 폰트 패키지에 의존하지 않는다. */
+/**
+ * 닉네임 첫 1자 + **랜덤 단색 배경** 의 SVG 이니셜 이미지를 생성한다. 호출마다 색이 달라져 "기본 이미지" 버튼을 다시 누르면 새 색이 나오는 UX 를 지원한다.
+ * 클라이언트 폰트 렌더링에 위임하므로 컨테이너 폰트 패키지에 의존하지 않는다.
+ */
 @Component
 public class ProfileImageGenerator {
 
@@ -16,9 +20,11 @@ public class ProfileImageGenerator {
 
   private static final int SIZE = 256;
 
+  private final SecureRandom random = new SecureRandom();
+
   public byte[] generateSvg(String nickname) {
     String letter = firstCharacter(nickname);
-    String background = pickColor(nickname);
+    String background = pickRandomColor();
     String svg =
         "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\""
             + SIZE
@@ -49,10 +55,8 @@ public class ProfileImageGenerator {
     return new String(Character.toChars(codePoint)).toUpperCase();
   }
 
-  private String pickColor(String nickname) {
-    String basis = nickname == null || nickname.isEmpty() ? "?" : nickname;
-    int index = Math.floorMod(basis.hashCode(), PALETTE.length);
-    return PALETTE[index];
+  private String pickRandomColor() {
+    return PALETTE[random.nextInt(PALETTE.length)];
   }
 
   private String escapeXml(String s) {

@@ -52,18 +52,20 @@ class ProfileImageInitializerTest {
   @DisplayName("initialize_이미지키없음_SVG생성후S3업로드_키세팅")
   void initialize_noExistingKey_generatesSvgAndUploads() {
     User user = newUserWithoutImage("홍길동");
-    UUID publicId = user.getPublicId();
     byte[] svgBytes = "<svg/>".getBytes();
     given(generator.generateSvg("홍길동")).willReturn(svgBytes);
 
     initializer.initialize(user);
 
-    String expectedKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/" + publicId + "/init.svg";
     then(generator).should().generateSvg("홍길동");
     then(s3Service)
         .should()
-        .putObject(eq(expectedKey), eq(svgBytes), eq(ProfileImageGenerator.CONTENT_TYPE));
-    assertThat(user.getProfileImageKey()).isEqualTo(expectedKey);
+        .putObject(any(String.class), eq(svgBytes), eq(ProfileImageGenerator.CONTENT_TYPE));
+    String key = user.getProfileImageKey();
+    assertThat(key)
+        .isNotNull()
+        .startsWith(UploadPolicy.PROFILE_IMAGES_PREFIX + "/" + user.getPublicId() + "/")
+        .endsWith(".svg");
   }
 
   @Test
@@ -76,9 +78,13 @@ class ProfileImageInitializerTest {
     initializer.initialize(user);
 
     String key = user.getProfileImageKey();
-    assertThat(key).startsWith(UploadPolicy.PROFILE_IMAGES_PREFIX + "/");
-    assertThat(key).endsWith("/init.svg");
-    assertThat(key).contains(user.getPublicId().toString());
+    assertThat(key)
+        .startsWith(UploadPolicy.PROFILE_IMAGES_PREFIX + "/" + user.getPublicId() + "/")
+        .endsWith(".svg");
+    // {prefix}/{publicId}/{uuid}.svg — uuid 부분이 36자
+    String[] parts = key.split("/");
+    assertThat(parts).hasSize(3);
+    assertThat(parts[2]).matches("[0-9a-f-]{36}\\.svg");
   }
 
   // ============ initialize — 이미지 있는 경우 (no-op) ============

@@ -78,6 +78,14 @@ public class UserController {
     return ResponseEntity.ok(ApiResponse.ok(response));
   }
 
+  @PostMapping("/me/profile-image/default")
+  public ResponseEntity<ApiResponse<UserResponse>> regenerateDefaultProfileImage(
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    UserResponse response =
+        userService.regenerateDefaultProfileImage(userDetails.getUser().getId());
+    return ResponseEntity.ok(ApiResponse.ok(response));
+  }
+
   @DeleteMapping("/me/profile-image")
   public ResponseEntity<ApiResponse<UserResponse>> deleteProfileImage(
       @AuthenticationPrincipal CustomUserDetails userDetails) {

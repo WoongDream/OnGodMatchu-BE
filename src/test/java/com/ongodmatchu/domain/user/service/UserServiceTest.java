@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willDoNothing;
@@ -56,6 +57,7 @@ class UserServiceTest {
   @Mock private PasswordValidator passwordValidator;
   @Mock private RefreshTokenRepository refreshTokenRepository;
   @Mock private S3Service s3Service;
+  @Mock private ProfileImageGenerator profileImageGenerator;
 
   private static final String DEFAULT_IMAGE_URL = "https://cdn.example.com/default.png";
   private static final String VIEW_URL = "https://cdn.example.com/presigned-view-url";
@@ -556,6 +558,72 @@ class UserServiceTest {
     given(userRepository.findById(99L)).willReturn(Optional.empty());
 
     assertThatThrownBy(() -> userService.deleteProfileImage(99L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  // ============ regenerateDefaultProfileImage ============
+
+  @Test
+  @DisplayName("regenerateDefaultProfileImage_새SVG생성후S3업로드_프로필키갱신")
+  void regenerateDefaultProfileImage_uploadsNewSvgAndUpdatesKey() {
+    User user = buildLocalUser(1L, "유저");
+    byte[] svgBytes = "<svg/>".getBytes();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(profileImageGenerator.generateSvg("유저")).willReturn(svgBytes);
+    given(s3Service.generateViewUrl(anyString()))
+        .willAnswer(inv -> viewUrlResponse(inv.getArgument(0)));
+
+    UserResponse result = userService.regenerateDefaultProfileImage(1L);
+
+    assertThat(user.getProfileImageKey())
+        .isNotNull()
+        .startsWith(UploadPolicy.PROFILE_IMAGES_PREFIX + "/" + user.getPublicId() + "/")
+        .endsWith(".svg");
+    then(s3Service)
+        .should()
+        .putObject(
+            eq(user.getProfileImageKey()), eq(svgBytes), eq(ProfileImageGenerator.CONTENT_TYPE));
+    assertThat(result.profileImageUrl()).isEqualTo(VIEW_URL);
+  }
+
+  @Test
+  @DisplayName("regenerateDefaultProfileImage_이전키있음_이전키_deleteQuietly호출")
+  void regenerateDefaultProfileImage_hasPreviousKey_deletesPrevious() {
+    User user = buildLocalUser(1L, "유저");
+    String oldKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/old.svg";
+    user.updateProfileImageKey(oldKey);
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(profileImageGenerator.generateSvg("유저")).willReturn("<svg/>".getBytes());
+    given(s3Service.generateViewUrl(anyString()))
+        .willAnswer(inv -> viewUrlResponse(inv.getArgument(0)));
+
+    userService.regenerateDefaultProfileImage(1L);
+
+    then(s3Service).should().deleteQuietly(oldKey);
+  }
+
+  @Test
+  @DisplayName("regenerateDefaultProfileImage_이전키없음_deleteQuietly미호출")
+  void regenerateDefaultProfileImage_noPreviousKey_skipsDelete() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(profileImageGenerator.generateSvg("유저")).willReturn("<svg/>".getBytes());
+    given(s3Service.generateViewUrl(anyString()))
+        .willAnswer(inv -> viewUrlResponse(inv.getArgument(0)));
+
+    userService.regenerateDefaultProfileImage(1L);
+
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("regenerateDefaultProfileImage_사용자미존재_USER_NOT_FOUND예외")
+  void regenerateDefaultProfileImage_userNotFound_throwsException() {
+    given(userRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> userService.regenerateDefaultProfileImage(99L))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
