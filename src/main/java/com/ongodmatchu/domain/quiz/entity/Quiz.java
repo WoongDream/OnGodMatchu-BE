@@ -4,6 +4,8 @@ import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -48,14 +50,25 @@ public class Quiz extends BaseTimeEntity {
   @Column(nullable = false)
   private int playCount;
 
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 10)
+  private QuizVisibility visibility;
+
   @Builder
-  private Quiz(User user, String title, String description, String category, String thumbnailKey) {
+  private Quiz(
+      User user,
+      String title,
+      String description,
+      String category,
+      String thumbnailKey,
+      QuizVisibility visibility) {
     this.user = user;
     this.title = title;
     this.description = description;
     this.category = category;
     this.thumbnailKey = thumbnailKey;
     this.playCount = 0;
+    this.visibility = visibility != null ? visibility : QuizVisibility.PRIVATE;
   }
 
   @PrePersist
@@ -83,5 +96,9 @@ public class Quiz extends BaseTimeEntity {
 
   public void updateThumbnailKey(String thumbnailKey) {
     this.thumbnailKey = thumbnailKey;
+  }
+
+  public void changeVisibility(QuizVisibility visibility) {
+    this.visibility = visibility;
   }
 }

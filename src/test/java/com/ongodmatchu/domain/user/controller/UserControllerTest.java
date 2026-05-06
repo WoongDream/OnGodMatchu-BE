@@ -15,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
@@ -374,6 +375,7 @@ class UserControllerTest {
             null,
             null,
             5,
+            QuizVisibility.PRIVATE,
             "테스트유저",
             LocalDateTime.of(2024, 1, 1, 0, 0));
     Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));
@@ -419,6 +421,7 @@ class UserControllerTest {
             null,
             null,
             10,
+            QuizVisibility.PUBLIC,
             "공개유저",
             LocalDateTime.of(2024, 6, 1, 0, 0));
     Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));
@@ -464,6 +467,7 @@ class UserControllerTest {
             null,
             null,
             3,
+            QuizVisibility.PUBLIC,
             "타인유저",
             LocalDateTime.of(2024, 3, 1, 0, 0));
     Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));

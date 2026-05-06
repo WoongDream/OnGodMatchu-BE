@@ -14,6 +14,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
@@ -78,6 +79,7 @@ class QuizControllerTest {
             null,
             null,
             0,
+            QuizVisibility.PUBLIC,
             "퀴즈작성자",
             LocalDateTime.of(2024, 1, 1, 0, 0));
   }
@@ -92,7 +94,7 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_정상요청_200_QuizResponse반환")
   void updateQuiz_validRequest_returns200WithQuizResponse() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", "새 설명", "music", null);
+    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", "새 설명", "music", null, null);
     QuizResponse updated =
         new QuizResponse(
             1L,
@@ -103,6 +105,7 @@ class QuizControllerTest {
             null,
             null,
             0,
+            QuizVisibility.PUBLIC,
             "퀴즈작성자",
             LocalDateTime.of(2024, 1, 1, 0, 0));
     given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class))).willReturn(updated);
@@ -122,7 +125,7 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_권한없음_403반환")
   void updateQuiz_forbidden_returns403() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null);
+    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class)))
         .willThrow(new BusinessException(ErrorCode.QUIZ_FORBIDDEN));
 
@@ -139,7 +142,7 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_퀴즈미존재_404반환")
   void updateQuiz_notFound_returns404() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null);
+    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(99L), any(QuizUpdateRequest.class)))
         .willThrow(new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
 
@@ -167,7 +170,7 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_모든필드null_정상_200반환")
   void updateQuiz_allNullFields_returns200() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest(null, null, null, null);
+    QuizUpdateRequest request = new QuizUpdateRequest(null, null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class)))
         .willReturn(sampleQuizResponse);
 

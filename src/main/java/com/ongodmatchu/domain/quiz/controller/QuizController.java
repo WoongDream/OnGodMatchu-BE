@@ -48,8 +48,10 @@ public class QuizController {
   }
 
   @GetMapping("/{quizId}")
-  public ResponseEntity<ApiResponse<QuizDetailResponse>> getQuizDetail(@PathVariable Long quizId) {
-    return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizDetail(quizId)));
+  public ResponseEntity<ApiResponse<QuizDetailResponse>> getQuizDetail(
+      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
+    return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizDetail(quizId, viewerId)));
   }
 
   @PostMapping

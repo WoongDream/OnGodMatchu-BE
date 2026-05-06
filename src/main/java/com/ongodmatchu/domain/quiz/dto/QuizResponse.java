@@ -1,6 +1,7 @@
 package com.ongodmatchu.domain.quiz.dto;
 
 import com.ongodmatchu.domain.quiz.entity.Quiz;
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ public record QuizResponse(
     String thumbnailKey,
     String thumbnailUrl,
     int playCount,
+    QuizVisibility visibility,
     String authorNickname,
     LocalDateTime createdAt) {
 
@@ -26,6 +28,7 @@ public record QuizResponse(
         quiz.getThumbnailKey(),
         thumbnailUrl,
         quiz.getPlayCount(),
+        quiz.getVisibility(),
         quiz.getUser().getNickname(),
         quiz.getCreatedAt());
   }

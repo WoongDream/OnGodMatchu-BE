@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willDoNothing;
@@ -21,6 +22,7 @@ import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
@@ -85,37 +87,53 @@ class QuizServiceTest {
   }
 
   private Quiz testQuiz(User user) {
-    Quiz quiz = Quiz.builder().user(user).title("퀴즈 제목").category("game").description("설명").build();
+    Quiz quiz =
+        Quiz.builder()
+            .user(user)
+            .title("퀴즈 제목")
+            .category("game")
+            .description("설명")
+            .visibility(QuizVisibility.PUBLIC)
+            .build();
     ReflectionTestUtils.setField(quiz, "id", 1L);
     ReflectionTestUtils.setField(quiz, "publicId", UUID.randomUUID());
     return quiz;
   }
 
   @Test
-  @DisplayName("카테고리 없이 퀴즈 목록 조회")
+  @DisplayName("카테고리 없이 퀴즈 목록 조회 — PUBLIC 만")
   void getQuizList_noCategory() {
     User user = testUser();
     Quiz quiz = testQuiz(user);
-    given(quizRepository.findAll(any(PageRequest.class))).willReturn(new PageImpl<>(List.of(quiz)));
+    given(quizRepository.findByVisibility(eq(QuizVisibility.PUBLIC), any(PageRequest.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
 
     var result = quizService.getQuizList(null, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).title()).isEqualTo("퀴즈 제목");
+    then(quizRepository)
+        .should()
+        .findByVisibility(eq(QuizVisibility.PUBLIC), any(PageRequest.class));
   }
 
   @Test
-  @DisplayName("카테고리 필터로 퀴즈 목록 조회")
+  @DisplayName("카테고리 필터로 퀴즈 목록 조회 — PUBLIC 만")
   void getQuizList_withCategory() {
     User user = testUser();
     Quiz quiz = testQuiz(user);
-    given(quizRepository.findByCategory(any(), any(PageRequest.class)))
+    given(
+            quizRepository.findByCategoryAndVisibility(
+                any(), eq(QuizVisibility.PUBLIC), any(PageRequest.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
 
     var result = quizService.getQuizList("game", PageRequest.of(0, 12));
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).category()).isEqualTo("game");
+    then(quizRepository)
+        .should()
+        .findByCategoryAndVisibility(eq("game"), eq(QuizVisibility.PUBLIC), any(PageRequest.class));
   }
 
   @Test
@@ -123,24 +141,121 @@ class QuizServiceTest {
   void getQuizDetail_notFound() {
     given(quizRepository.findById(99L)).willReturn(Optional.empty());
 
-    assertThatThrownBy(() -> quizService.getQuizDetail(99L))
+    assertThatThrownBy(() -> quizService.getQuizDetail(99L, null))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
   }
 
   @Test
-  @DisplayName("퀴즈 상세 조회 성공")
+  @DisplayName("퀴즈 상세 조회 성공 — PUBLIC 은 비로그인도 조회 가능")
   void getQuizDetail_success() {
     User user = testUser();
     Quiz quiz = testQuiz(user);
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
     given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of());
 
-    QuizDetailResponse result = quizService.getQuizDetail(1L);
+    QuizDetailResponse result = quizService.getQuizDetail(1L, null);
 
     assertThat(result.title()).isEqualTo("퀴즈 제목");
     assertThat(result.questions()).isEmpty();
+    assertThat(result.visibility()).isEqualTo(QuizVisibility.PUBLIC);
+  }
+
+  @Test
+  @DisplayName("PRIVATE 퀴즈 단건 조회 — 외부 뷰어는 QUIZ_NOT_FOUND")
+  void getQuizDetail_private_externalViewer_throwsNotFound() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    assertThatThrownBy(() -> quizService.getQuizDetail(1L, 99L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("PRIVATE 퀴즈 단건 조회 — 비로그인도 QUIZ_NOT_FOUND")
+  void getQuizDetail_private_anonymousViewer_throwsNotFound() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    assertThatThrownBy(() -> quizService.getQuizDetail(1L, null))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("PRIVATE 퀴즈 단건 조회 — 본인은 정상 조회")
+  void getQuizDetail_private_owner_success() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of());
+
+    QuizDetailResponse result = quizService.getQuizDetail(1L, 1L);
+
+    assertThat(result.title()).isEqualTo("퀴즈 제목");
+    assertThat(result.visibility()).isEqualTo(QuizVisibility.PRIVATE);
+  }
+
+  @Test
+  @DisplayName("Quiz 빌더는 visibility 미지정 시 PRIVATE 기본값")
+  void quizBuilder_defaultsVisibilityToPrivate() {
+    User user = testUser();
+    Quiz quiz = Quiz.builder().user(user).title("t").category("game").build();
+
+    assertThat(quiz.getVisibility()).isEqualTo(QuizVisibility.PRIVATE);
+  }
+
+  @Test
+  @DisplayName("createQuiz_visibility_미지정시_PRIVATE로저장")
+  void createQuiz_visibilityDefaultsToPrivate() {
+    User user = testUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(quizRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+    given(questionRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+    QuizCreateRequest request =
+        new QuizCreateRequest(
+            "기본비공개",
+            null,
+            "etc",
+            null,
+            null,
+            List.of(new QuestionCreateRequest(null, null, "문제1", "정답1")));
+
+    QuizResponse result = quizService.createQuiz(1L, request);
+
+    assertThat(result.visibility()).isEqualTo(QuizVisibility.PRIVATE);
+  }
+
+  @Test
+  @DisplayName("createQuiz_visibility_PUBLIC지정시_PUBLIC로저장")
+  void createQuiz_visibilityPublic() {
+    User user = testUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(quizRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+    given(questionRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+    QuizCreateRequest request =
+        new QuizCreateRequest(
+            "공개퀴즈",
+            null,
+            "etc",
+            null,
+            QuizVisibility.PUBLIC,
+            List.of(new QuestionCreateRequest(null, null, "문제1", "정답1")));
+
+    QuizResponse result = quizService.createQuiz(1L, request);
+
+    assertThat(result.visibility()).isEqualTo(QuizVisibility.PUBLIC);
   }
 
   @Test
@@ -157,11 +272,13 @@ class QuizServiceTest {
             "설명",
             "music",
             null,
+            null,
             List.of(new QuestionCreateRequest(null, null, "문제1", "정답1")));
 
     QuizResponse result = quizService.createQuiz(1L, request);
 
     assertThat(result.title()).isEqualTo("새 퀴즈");
+    assertThat(result.visibility()).isEqualTo(QuizVisibility.PRIVATE);
     then(questionRepository).should().save(any());
   }
 
@@ -179,6 +296,7 @@ class QuizServiceTest {
             "설명",
             "entertainment",
             "quiz-images/uid/thumb.png",
+            null,
             List.of(
                 new QuestionCreateRequest(
                     "quiz-images/uid/q.png", "quiz-images/uid/a.png", "문제1", "정답1")));
@@ -210,6 +328,7 @@ class QuizServiceTest {
             null,
             "etc",
             null,
+            null,
             List.of(new QuestionCreateRequest(key, key, "문제1", "정답1")));
 
     quizService.createQuiz(1L, request);
@@ -229,6 +348,7 @@ class QuizServiceTest {
             "잘못된 카테고리",
             "설명",
             "역사",
+            null,
             null,
             List.of(new QuestionCreateRequest(null, null, "문제1", "정답1")));
 
@@ -287,6 +407,7 @@ class QuizServiceTest {
             "설명",
             "music",
             null,
+            null,
             List.of(new QuestionCreateRequest(null, null, "문제1", "정답1")));
 
     assertThatThrownBy(() -> quizService.createQuiz(99L, request))
@@ -311,6 +432,7 @@ class QuizServiceTest {
             "멀티 퀴즈",
             "설명",
             "music",
+            null,
             null,
             List.of(
                 new QuestionCreateRequest(null, null, "문제1", "정답1"),
@@ -405,44 +527,56 @@ class QuizServiceTest {
   }
 
   @Test
-  @DisplayName("getQuizListByPublicId_공개프로필_비로그인_정상목록반환")
+  @DisplayName("getQuizListByPublicId_공개프로필_비로그인_PUBLIC만반환")
   void getQuizListByPublicId_publicProfile_anonymousViewer_returnsList() {
     User author = testUser();
     Quiz quiz = testQuiz(author);
     UUID authorPublicId = author.getPublicId();
     Pageable pageable = PageRequest.of(0, 12);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+    given(
+            quizRepository.findByUserIdAndVisibilityOrderByCreatedAtDesc(
+                1L, QuizVisibility.PUBLIC, pageable))
         .willReturn(new PageImpl<>(List.of(quiz)));
 
     Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, null, pageable);
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).title()).isEqualTo("퀴즈 제목");
+    then(quizRepository)
+        .should()
+        .findByUserIdAndVisibilityOrderByCreatedAtDesc(1L, QuizVisibility.PUBLIC, pageable);
   }
 
   @Test
-  @DisplayName("getQuizListByPublicId_공개프로필_외부뷰어_정상목록반환")
+  @DisplayName("getQuizListByPublicId_공개프로필_외부뷰어_PUBLIC만반환")
   void getQuizListByPublicId_publicProfile_externalViewer_returnsList() {
     User author = testUser();
     Quiz quiz = testQuiz(author);
     UUID authorPublicId = author.getPublicId();
     Pageable pageable = PageRequest.of(0, 12);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+    given(
+            quizRepository.findByUserIdAndVisibilityOrderByCreatedAtDesc(
+                1L, QuizVisibility.PUBLIC, pageable))
         .willReturn(new PageImpl<>(List.of(quiz)));
 
     Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, 99L, pageable);
 
     assertThat(result.getContent()).hasSize(1);
+    then(quizRepository)
+        .should()
+        .findByUserIdAndVisibilityOrderByCreatedAtDesc(1L, QuizVisibility.PUBLIC, pageable);
+    then(quizRepository).should(never()).findByUserIdOrderByCreatedAtDesc(anyLong(), any());
   }
 
   @Test
-  @DisplayName("getQuizListByPublicId_비공개프로필_본인_정상목록반환")
+  @DisplayName("getQuizListByPublicId_비공개프로필_본인_PRIVATE포함_전체반환")
   void getQuizListByPublicId_privateProfile_owner_returnsList() {
     User author = testUser();
     author.updateProfilePublic(false);
     Quiz quiz = testQuiz(author);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
     UUID authorPublicId = author.getPublicId();
     Pageable pageable = PageRequest.of(0, 12);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
@@ -452,6 +586,7 @@ class QuizServiceTest {
     Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, 1L, pageable);
 
     assertThat(result.getContent()).hasSize(1);
+    then(quizRepository).should().findByUserIdOrderByCreatedAtDesc(1L, pageable);
   }
 
   @Test
@@ -467,6 +602,9 @@ class QuizServiceTest {
 
     assertThat(result.getContent()).isEmpty();
     then(quizRepository).should(never()).findByUserIdOrderByCreatedAtDesc(anyLong(), any());
+    then(quizRepository)
+        .should(never())
+        .findByUserIdAndVisibilityOrderByCreatedAtDesc(anyLong(), any(), any());
   }
 
   @Test
@@ -482,6 +620,9 @@ class QuizServiceTest {
 
     assertThat(result.getContent()).isEmpty();
     then(quizRepository).should(never()).findByUserIdOrderByCreatedAtDesc(anyLong(), any());
+    then(quizRepository)
+        .should(never())
+        .findByUserIdAndVisibilityOrderByCreatedAtDesc(anyLong(), any(), any());
   }
 
   // ============ updateQuiz ============
@@ -492,7 +633,9 @@ class QuizServiceTest {
     given(quizRepository.findById(99L)).willReturn(Optional.empty());
 
     assertThatThrownBy(
-            () -> quizService.updateQuiz(1L, 99L, new QuizUpdateRequest(null, null, null, null)))
+            () ->
+                quizService.updateQuiz(
+                    1L, 99L, new QuizUpdateRequest(null, null, null, null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
@@ -506,7 +649,9 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     assertThatThrownBy(
-            () -> quizService.updateQuiz(999L, 1L, new QuizUpdateRequest(null, null, null, null)))
+            () ->
+                quizService.updateQuiz(
+                    999L, 1L, new QuizUpdateRequest(null, null, null, null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.QUIZ_FORBIDDEN);
@@ -520,7 +665,7 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     QuizResponse result =
-        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest("새제목", null, null, null));
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest("새제목", null, null, null, null));
 
     assertThat(result.title()).isEqualTo("새제목");
     assertThat(quiz.getTitle()).isEqualTo("새제목");
@@ -534,7 +679,7 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     QuizResponse result =
-        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, "새설명", null, null));
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, "새설명", null, null, null));
 
     assertThat(result.description()).isEqualTo("새설명");
     assertThat(quiz.getDescription()).isEqualTo("새설명");
@@ -548,7 +693,7 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     QuizResponse result =
-        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, "music", null));
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, "music", null, null));
 
     assertThat(result.category()).isEqualTo("music");
     assertThat(quiz.getCategory()).isEqualTo("music");
@@ -562,7 +707,8 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     assertThatThrownBy(
-            () -> quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, "역사", null)))
+            () ->
+                quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, "역사", null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_CATEGORY);
@@ -578,7 +724,7 @@ class QuizServiceTest {
     willDoNothing().given(s3Service).verifyKeyOwnedAndCompleted(1L, "new-key.png");
     willDoNothing().given(s3Service).deleteQuietly("old-key.png");
 
-    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png"));
+    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png", null));
 
     then(s3Service).should().verifyKeyOwnedAndCompleted(1L, "new-key.png");
     then(s3Service).should().deleteQuietly("old-key.png");
@@ -593,7 +739,7 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
     willDoNothing().given(s3Service).verifyKeyOwnedAndCompleted(1L, "new-key.png");
 
-    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png"));
+    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png", null));
 
     then(s3Service).should().verifyKeyOwnedAndCompleted(1L, "new-key.png");
     then(s3Service).should(never()).deleteQuietly(anyString());
@@ -607,10 +753,41 @@ class QuizServiceTest {
     ReflectionTestUtils.setField(quiz, "thumbnailKey", "same-key.png");
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
-    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "same-key.png"));
+    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "same-key.png", null));
 
     then(s3Service).should(never()).verifyKeyOwnedAndCompleted(anyLong(), anyString());
     then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("updateQuiz_visibility_PUBLIC으로토글")
+  void updateQuiz_visibility_togglesToPublic() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    QuizResponse result =
+        quizService.updateQuiz(
+            1L, 1L, new QuizUpdateRequest(null, null, null, null, QuizVisibility.PUBLIC));
+
+    assertThat(result.visibility()).isEqualTo(QuizVisibility.PUBLIC);
+    assertThat(quiz.getVisibility()).isEqualTo(QuizVisibility.PUBLIC);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_visibility_PRIVATE으로토글")
+  void updateQuiz_visibility_togglesToPrivate() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    QuizResponse result =
+        quizService.updateQuiz(
+            1L, 1L, new QuizUpdateRequest(null, null, null, null, QuizVisibility.PRIVATE));
+
+    assertThat(result.visibility()).isEqualTo(QuizVisibility.PRIVATE);
+    assertThat(quiz.getVisibility()).isEqualTo(QuizVisibility.PRIVATE);
   }
 
   @Test
@@ -621,7 +798,7 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     QuizResponse result =
-        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, null));
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, null, null));
 
     assertThat(result.title()).isEqualTo("퀴즈 제목");
     assertThat(result.category()).isEqualTo("game");
