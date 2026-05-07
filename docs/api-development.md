@@ -11,6 +11,7 @@
 [ ] Service 메서드 — @Transactional(readOnly?) + ErrorCode 사용
 [ ] Repository 메서드 — 필요 시 @Query (PG 문법 준수)
 [ ] Controller — @AuthenticationPrincipal CustomUserDetails (필수/옵셔널 결정), ApiResponse 래핑
+[ ] Swagger — @Operation(summary, description) 1줄 + 가능 에러 코드 (자세한 건 docs ref). 자명하지 않은 응답 필드만 @Schema(description)
 [ ] SecurityConfig — 인증/permitAll 매처 (필요 시)
 [ ] ErrorCode enum — 신규 케이스 추가
 [ ] 마이그레이션 — V{N}__이름.sql (스키마 변경 시)
@@ -401,7 +402,26 @@ Presigned URL TTL = **10분** (`UPLOAD_URL_EXPIRY`). 사용자가 페이지 열�
 
 ---
 
-## 11. 자주 하는 실수 모음 (FAQ)
+## 11. Swagger / OpenAPI
+
+`/swagger-ui/index.html` (UI), `/v3/api-docs` (JSON 스펙). `OpenApiConfig` 가 Bearer 인증 스킴을 정의해 UI 에서 토큰 입력 후 호출 가능.
+
+### 어노테이션 컨벤션 — **단순하게**
+
+이 문서 (`docs/api-development.md` + `docs/error-codes.md`) 가 단일 진실 원천. Swagger 어노테이션은 endpoint 단위 한 줄 요약 + 가능 에러 코드 목록 정도로만:
+
+- `@Tag(name, description)` — 컨트롤러에 한 번. description 끝에 docs ref 한 줄
+- `@Operation(summary, description)` — endpoint 마다. **description 1줄**: 핵심 동작 + 가능 에러 코드 (예: `"PRIVATE 본인만. 가능 에러: QUIZ_NOT_FOUND(404), QUIZ_FORBIDDEN(403)"`)
+- `@Schema(description)` — **자명하지 않은 응답 필드만** (`isStarred` nullable 의미, `correctRate` null 의미, `requiredHeaders` 사용법, `OffsetDateTime` KST 등). example 은 보통 생략 (docs 가 더 정확)
+- `@ApiResponse(responseCode, description)` — 보통 미사용. `@Operation.description` 한 줄에 다 적는다 (별도 어노테이션 추가는 동기화 부담만 늘어남)
+
+### 상세 정보는 docs 로 ref
+
+긴 설명/예시/매핑 표는 어노테이션이 아니라 `docs/api-development.md` 에 적고, 어노테이션은 그 섹션을 가리키도록. 양쪽 동기화 부담을 한 곳으로 모은다.
+
+---
+
+## 12. 자주 하는 실수 모음 (FAQ)
 
 | 증상 | 원인 / 해결 |
 |---|---|

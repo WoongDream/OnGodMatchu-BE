@@ -3,6 +3,7 @@ package com.ongodmatchu.domain.quiz.dto;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.global.util.TimeFormat;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
@@ -13,15 +14,16 @@ public record QuizResponse(
     String description,
     String category,
     String thumbnailKey,
-    String thumbnailUrl,
+    @Schema(description = "썸네일 presigned GET URL — TTL 1시간, 응답마다 새 URL") String thumbnailUrl,
     int playCount,
     int starCount,
     int commentCount,
     int shareCount,
-    Boolean isStarred,
+    @Schema(description = "현재 사용자가 좋아요(스타) 눌렀는지. 비로그인 = null (모름)", nullable = true)
+        Boolean isStarred,
     QuizVisibility visibility,
     String authorNickname,
-    OffsetDateTime createdAt) {
+    @Schema(description = "생성 시각 (ISO 8601 +09:00)") OffsetDateTime createdAt) {
 
   public static QuizResponse from(Quiz quiz, String thumbnailUrl) {
     return from(quiz, thumbnailUrl, null);
