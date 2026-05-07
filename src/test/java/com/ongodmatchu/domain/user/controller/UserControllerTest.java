@@ -375,6 +375,10 @@ class UserControllerTest {
             null,
             null,
             5,
+            0,
+            0,
+            0,
+            false,
             QuizVisibility.PRIVATE,
             "테스트유저",
             LocalDateTime.of(2024, 1, 1, 0, 0));
@@ -421,6 +425,10 @@ class UserControllerTest {
             null,
             null,
             10,
+            0,
+            0,
+            0,
+            false,
             QuizVisibility.PUBLIC,
             "공개유저",
             LocalDateTime.of(2024, 6, 1, 0, 0));
@@ -467,6 +475,10 @@ class UserControllerTest {
             null,
             null,
             3,
+            0,
+            0,
+            0,
+            false,
             QuizVisibility.PUBLIC,
             "타인유저",
             LocalDateTime.of(2024, 3, 1, 0, 0));

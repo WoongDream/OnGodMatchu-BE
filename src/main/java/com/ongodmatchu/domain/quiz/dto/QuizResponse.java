@@ -14,11 +14,19 @@ public record QuizResponse(
     String thumbnailKey,
     String thumbnailUrl,
     int playCount,
+    int starCount,
+    int commentCount,
+    int shareCount,
+    boolean isStarred,
     QuizVisibility visibility,
     String authorNickname,
     LocalDateTime createdAt) {
 
   public static QuizResponse from(Quiz quiz, String thumbnailUrl) {
+    return from(quiz, thumbnailUrl, false);
+  }
+
+  public static QuizResponse from(Quiz quiz, String thumbnailUrl, boolean isStarred) {
     return new QuizResponse(
         quiz.getId(),
         quiz.getPublicId(),
@@ -28,6 +36,10 @@ public record QuizResponse(
         quiz.getThumbnailKey(),
         thumbnailUrl,
         quiz.getPlayCount(),
+        quiz.getStarCount(),
+        quiz.getCommentCount(),
+        quiz.getShareCount(),
+        isStarred,
         quiz.getVisibility(),
         quiz.getUser().getNickname(),
         quiz.getCreatedAt());

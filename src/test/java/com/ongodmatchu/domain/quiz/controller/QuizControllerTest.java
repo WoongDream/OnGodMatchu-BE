@@ -16,6 +16,7 @@ import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.service.QuizService;
+import com.ongodmatchu.domain.quiz.service.QuizStarService;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.global.exception.BusinessException;
@@ -47,6 +48,7 @@ class QuizControllerTest {
   @Autowired private ObjectMapper objectMapper;
 
   @MockitoBean private QuizService quizService;
+  @MockitoBean private QuizStarService quizStarService;
   @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
   private User testUser;
@@ -79,6 +81,10 @@ class QuizControllerTest {
             null,
             null,
             0,
+            0,
+            0,
+            0,
+            false,
             QuizVisibility.PUBLIC,
             "퀴즈작성자",
             LocalDateTime.of(2024, 1, 1, 0, 0));
@@ -105,6 +111,10 @@ class QuizControllerTest {
             null,
             null,
             0,
+            0,
+            0,
+            0,
+            false,
             QuizVisibility.PUBLIC,
             "퀴즈작성자",
             LocalDateTime.of(2024, 1, 1, 0, 0));

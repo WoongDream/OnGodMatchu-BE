@@ -24,6 +24,7 @@ import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
+import com.ongodmatchu.domain.quiz.repository.QuizStarRepository;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -57,6 +58,7 @@ class QuizServiceTest {
   @Mock private QuizRepository quizRepository;
   @Mock private QuestionRepository questionRepository;
   @Mock private UserRepository userRepository;
+  @Mock private QuizStarRepository quizStarRepository;
   @Mock private S3Service s3Service;
 
   @BeforeEach
@@ -449,6 +451,46 @@ class QuizServiceTest {
     assertThat(saved.get(0).getOrderNum()).isEqualTo(1);
     assertThat(saved.get(1).getOrderNum()).isEqualTo(2);
     assertThat(saved.get(2).getOrderNum()).isEqualTo(3);
+  }
+
+  @Test
+  @DisplayName("incrementShareCount_PUBLIC퀴즈_비로그인_정상증가")
+  void incrementShareCount_publicQuiz_anonymous() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    quizService.incrementShareCount(1L, null);
+
+    assertThat(quiz.getShareCount()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("incrementShareCount_PRIVATE퀴즈_외부유저_QUIZ_NOT_FOUND")
+  void incrementShareCount_privateQuiz_externalUser_throws() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    assertThatThrownBy(() -> quizService.incrementShareCount(1L, 99L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+    assertThat(quiz.getShareCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("incrementShareCount_PRIVATE퀴즈_본인_정상증가")
+  void incrementShareCount_privateQuiz_owner() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    quizService.incrementShareCount(1L, 1L);
+
+    assertThat(quiz.getShareCount()).isEqualTo(1);
   }
 
   @Test

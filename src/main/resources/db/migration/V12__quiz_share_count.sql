@@ -1,0 +1,2 @@
+ALTER TABLE quizzes
+    ADD COLUMN share_count INT NOT NULL DEFAULT 0;

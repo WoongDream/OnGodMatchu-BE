@@ -13,6 +13,7 @@ import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizCategory;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
+import com.ongodmatchu.domain.quiz.repository.QuizStarRepository;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
 import com.ongodmatchu.global.exception.BusinessException;
@@ -37,6 +38,7 @@ public class QuizService {
   private final QuizRepository quizRepository;
   private final QuestionRepository questionRepository;
   private final UserRepository userRepository;
+  private final QuizStarRepository quizStarRepository;
   private final S3Service s3Service;
 
   public List<CategoryResponse> getCategories() {
@@ -92,8 +94,11 @@ public class QuizService {
                         lookupUrl(presigned, q.getAnswerImageKey())))
             .toList();
 
+    boolean isStarred =
+        viewerUserId != null
+            && quizStarRepository.existsByUserIdAndQuizId(viewerUserId, quiz.getId());
     return QuizDetailResponse.of(
-        quiz, lookupUrl(presigned, quiz.getThumbnailKey()), questionResponses);
+        quiz, lookupUrl(presigned, quiz.getThumbnailKey()), isStarred, questionResponses);
   }
 
   @Transactional
@@ -153,6 +158,20 @@ public class QuizService {
             .findById(quizId)
             .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
     quiz.incrementPlayCount();
+  }
+
+  /** 공유 카운터 증분. PRIVATE 퀴즈는 본인만 호출 가능 (외부에서 노출 자체가 안 되므로). */
+  @Transactional
+  public void incrementShareCount(Long quizId, Long viewerUserId) {
+    Quiz quiz =
+        quizRepository
+            .findById(quizId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
+    boolean isOwner = viewerUserId != null && viewerUserId.equals(quiz.getUser().getId());
+    if (quiz.getVisibility() == QuizVisibility.PRIVATE && !isOwner) {
+      throw new BusinessException(ErrorCode.QUIZ_NOT_FOUND);
+    }
+    quiz.incrementShareCount();
   }
 
   /** 본인의 퀴즈 목록. */

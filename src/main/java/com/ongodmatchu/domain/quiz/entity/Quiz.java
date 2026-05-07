@@ -50,6 +50,15 @@ public class Quiz extends BaseTimeEntity {
   @Column(nullable = false)
   private int playCount;
 
+  @Column(nullable = false)
+  private int starCount;
+
+  @Column(nullable = false)
+  private int commentCount;
+
+  @Column(nullable = false)
+  private int shareCount;
+
   @Enumerated(EnumType.STRING)
   @Column(nullable = false, length = 10)
   private QuizVisibility visibility;
@@ -68,6 +77,9 @@ public class Quiz extends BaseTimeEntity {
     this.category = category;
     this.thumbnailKey = thumbnailKey;
     this.playCount = 0;
+    this.starCount = 0;
+    this.commentCount = 0;
+    this.shareCount = 0;
     this.visibility = visibility != null ? visibility : QuizVisibility.PRIVATE;
   }
 
@@ -100,5 +112,25 @@ public class Quiz extends BaseTimeEntity {
 
   public void changeVisibility(QuizVisibility visibility) {
     this.visibility = visibility;
+  }
+
+  public void incrementStarCount() {
+    this.starCount++;
+  }
+
+  public void decrementStarCount() {
+    if (this.starCount > 0) this.starCount--;
+  }
+
+  public void incrementCommentCount() {
+    this.commentCount++;
+  }
+
+  public void decrementCommentCount() {
+    if (this.commentCount > 0) this.commentCount--;
+  }
+
+  public void incrementShareCount() {
+    this.shareCount++;
   }
 }

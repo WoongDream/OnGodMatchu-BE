@@ -7,6 +7,7 @@ import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.service.QuizService;
+import com.ongodmatchu.domain.quiz.service.QuizStarService;
 import com.ongodmatchu.global.response.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -22,6 +23,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -33,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class QuizController {
 
   private final QuizService quizService;
+  private final QuizStarService quizStarService;
 
   @GetMapping("/categories")
   public ResponseEntity<ApiResponse<List<CategoryResponse>>> getCategories() {
@@ -68,6 +71,14 @@ public class QuizController {
     return ResponseEntity.ok(ApiResponse.ok());
   }
 
+  @PostMapping("/{quizId}/share")
+  public ResponseEntity<ApiResponse<Void>> share(
+      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
+    quizService.incrementShareCount(quizId, viewerId);
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
   @PatchMapping("/{quizId}")
   public ResponseEntity<ApiResponse<QuizResponse>> updateQuiz(
       @PathVariable Long quizId,
@@ -81,6 +92,20 @@ public class QuizController {
   public ResponseEntity<ApiResponse<Void>> deleteQuiz(
       @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
     quizService.deleteQuiz(userDetails.getUser().getId(), quizId);
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  @PutMapping("/{quizId}/star")
+  public ResponseEntity<ApiResponse<Void>> star(
+      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    quizStarService.star(userDetails.getUser().getId(), quizId);
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  @DeleteMapping("/{quizId}/star")
+  public ResponseEntity<ApiResponse<Void>> unstar(
+      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    quizStarService.unstar(userDetails.getUser().getId(), quizId);
     return ResponseEntity.ok(ApiResponse.ok());
   }
 }
