@@ -1,9 +1,11 @@
 package com.ongodmatchu.domain.user.controller;
 
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
+import com.ongodmatchu.domain.quiz.dto.AttemptListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizSort;
 import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
+import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
@@ -44,6 +46,7 @@ public class UserController {
 
   private final UserService userService;
   private final QuizService quizService;
+  private final QuizAttemptService quizAttemptService;
 
   @Operation(summary = "내 정보 조회", description = "본인 전용. profileImageUrl 은 항상 non-null 보장")
   @GetMapping("/me")
@@ -154,7 +157,8 @@ public class UserController {
 
   @Operation(
       summary = "내 프로필 통계",
-      description = "총 퀴즈/플레이/스타/댓글/공유 합계 + 이번주 플레이 수. weeklyPlayCount 는 풀이 기록 머지 후 채워질 자리, 1차에선 0")
+      description =
+          "총 퀴즈/플레이/스타/댓글/공유 합계 + 이번주 플레이 수(attempts 기반) + 평균 정답률(시도 1회 이상 퀴즈의 단순 평균, 0건이면 null)")
   @GetMapping("/me/profile/stats")
   public ResponseEntity<ApiResponse<ProfileStatsResponse>> getMyProfileStats(
       @AuthenticationPrincipal CustomUserDetails userDetails) {
@@ -174,6 +178,28 @@ public class UserController {
     Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
     Page<MyQuizListItemResponse> page =
         quizService.getQuizListByPublicId(publicId, viewerId, QuizSort.fromKey(sort), pageable);
+    return ResponseEntity.ok(ApiResponse.ok(page));
+  }
+
+  @Operation(summary = "내 풀이 기록", description = "completedAt DESC. size 디폴트 20 / 최대 50. 인증 필수")
+  @GetMapping("/me/attempts")
+  public ResponseEntity<ApiResponse<Page<AttemptListItemResponse>>> getMyAttempts(
+      @AuthenticationPrincipal CustomUserDetails userDetails,
+      @PageableDefault(size = 20) Pageable pageable) {
+    Page<AttemptListItemResponse> page =
+        quizAttemptService.getMyAttempts(userDetails.getUser().getId(), pageable);
+    return ResponseEntity.ok(ApiResponse.ok(page));
+  }
+
+  @Operation(summary = "타 유저의 풀이 기록", description = "비공개 프로필 + 외부 뷰어 → 빈 페이지. 본인이거나 공개 프로필이면 정상 반환")
+  @GetMapping("/{publicId}/attempts")
+  public ResponseEntity<ApiResponse<Page<AttemptListItemResponse>>> getUserAttempts(
+      @PathVariable UUID publicId,
+      @AuthenticationPrincipal CustomUserDetails userDetails,
+      @PageableDefault(size = 20) Pageable pageable) {
+    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
+    Page<AttemptListItemResponse> page =
+        quizAttemptService.getAttemptsByPublicId(publicId, viewerId, pageable);
     return ResponseEntity.ok(ApiResponse.ok(page));
   }
 }

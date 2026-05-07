@@ -8,7 +8,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.OffsetDateTime;
 import java.util.UUID;
 
-/** 프로필 (내가 만든 퀴즈 / 외부 뷰어용) 리스트 아이템. {@code correctRate} 는 풀이 기록 머지 후 채워질 자리이며 1차에서는 항상 null. */
+/** 프로필 (내가 만든 퀴즈 / 외부 뷰어용) 리스트 아이템. {@code correctRate} 는 attempts 기반 집계 — 시도 0회면 null. */
 public record MyQuizListItemResponse(
     @Schema(description = "퀴즈 numeric ID — 라우팅/상세/편집/삭제 호출 시 사용") Long id,
     @Schema(description = "퀴즈 publicId UUID — 향후 공유링크 용도 (현재 라우팅에는 사용 X)") UUID quizId,
@@ -22,15 +22,12 @@ public record MyQuizListItemResponse(
     int shareCount,
     int starCount,
     int commentCount,
-    @Schema(
-            description =
-                "평균 정답률 (0~100). 풀이 기록 0회면 null (산출 불가). 1차에서는 항상 null — 풀이 기록 묶음 머지 후 채움",
-            nullable = true)
+    @Schema(description = "평균 정답률 (0~100). 풀이 기록 0회면 null (산출 불가)", nullable = true)
         Double correctRate,
     @Schema(description = "생성 시각 (ISO 8601 +09:00)") OffsetDateTime createdAt,
     @Schema(description = "마지막 저장 시각 (ISO 8601 +09:00)") OffsetDateTime updatedAt) {
 
-  public static MyQuizListItemResponse from(Quiz quiz, String thumbnailUrl) {
+  public static MyQuizListItemResponse from(Quiz quiz, String thumbnailUrl, Double correctRate) {
     return new MyQuizListItemResponse(
         quiz.getId(),
         quiz.getPublicId(),
@@ -44,7 +41,7 @@ public record MyQuizListItemResponse(
         quiz.getShareCount(),
         quiz.getStarCount(),
         quiz.getCommentCount(),
-        null,
+        correctRate,
         TimeFormat.toResponse(quiz.getCreatedAt()),
         TimeFormat.toResponse(quiz.getUpdatedAt()));
   }

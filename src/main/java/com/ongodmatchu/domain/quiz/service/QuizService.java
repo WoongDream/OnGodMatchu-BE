@@ -15,6 +15,8 @@ import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizCategory;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
+import com.ongodmatchu.domain.quiz.repository.QuizAttemptRepository;
+import com.ongodmatchu.domain.quiz.repository.QuizAttemptRepository.QuizCorrectRateRow;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow;
 import com.ongodmatchu.domain.quiz.repository.QuizStarRepository;
@@ -23,9 +25,15 @@ import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
+import com.ongodmatchu.global.util.TimeFormat;
 import com.ongodmatchu.infra.s3.S3Service;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -45,6 +53,7 @@ public class QuizService {
   private final QuestionRepository questionRepository;
   private final UserRepository userRepository;
   private final QuizStarRepository quizStarRepository;
+  private final QuizAttemptRepository quizAttemptRepository;
   private final S3Service s3Service;
 
   public List<CategoryResponse> getCategories() {
@@ -231,15 +240,45 @@ public class QuizService {
     List<String> keys =
         page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
     Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
-    return page.map(q -> MyQuizListItemResponse.from(q, lookupUrl(presigned, q.getThumbnailKey())));
+
+    List<Long> quizIds = page.getContent().stream().map(Quiz::getId).toList();
+    Map<Long, Double> rateByQuizId = new HashMap<>();
+    if (!quizIds.isEmpty()) {
+      for (QuizCorrectRateRow r : quizAttemptRepository.correctRateByQuizIds(quizIds)) {
+        rateByQuizId.put(r.getQuizId(), r.getRate());
+      }
+    }
+
+    return page.map(
+        q ->
+            MyQuizListItemResponse.from(
+                q, lookupUrl(presigned, q.getThumbnailKey()), rateByQuizId.get(q.getId())));
   }
 
-  /** 프로필 (내가 만든 퀴즈) 페이지 상단 통계. {@code weeklyPlayCount} 는 풀이 기록 묶음 머지 전까지 0 으로 반환. */
+  /** 프로필 (내가 만든 퀴즈) 페이지 상단 통계. weeklyPlayCount / avgCorrectRate 는 attempts 기반 집계. */
   @Transactional(readOnly = true)
   public ProfileStatsResponse getProfileStats(Long userId) {
     QuizAggregateRow row = quizRepository.aggregateByUserId(userId);
+    LocalDateTime weekStart =
+        LocalDate.now(TimeFormat.SERVER_OFFSET)
+            .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+            .atStartOfDay();
+    long weekly = quizAttemptRepository.countWeeklyPlaysOfQuizzesOwnedBy(userId, weekStart);
+
+    List<Double> perQuizRates = quizAttemptRepository.perQuizCorrectRatesOwnedBy(userId);
+    Double avgCorrectRate =
+        perQuizRates.isEmpty()
+            ? null
+            : perQuizRates.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+
     return new ProfileStatsResponse(
-        row.getQuizCount(), row.getPlays(), row.getStars(), row.getComments(), row.getShares(), 0L);
+        row.getQuizCount(),
+        row.getPlays(),
+        row.getStars(),
+        row.getComments(),
+        row.getShares(),
+        weekly,
+        avgCorrectRate);
   }
 
   private Pageable applyPageDefaults(Pageable pageable, QuizSort sort) {

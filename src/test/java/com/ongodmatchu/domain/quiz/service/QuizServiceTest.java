@@ -26,6 +26,7 @@ import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
+import com.ongodmatchu.domain.quiz.repository.QuizAttemptRepository;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
 import com.ongodmatchu.domain.quiz.repository.QuizStarRepository;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
@@ -62,6 +63,7 @@ class QuizServiceTest {
   @Mock private QuestionRepository questionRepository;
   @Mock private UserRepository userRepository;
   @Mock private QuizStarRepository quizStarRepository;
+  @Mock private QuizAttemptRepository quizAttemptRepository;
   @Mock private S3Service s3Service;
 
   @BeforeEach
@@ -537,37 +539,42 @@ class QuizServiceTest {
 
   // ============ getProfileStats ============
 
+  private com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow stubAggregateRow(
+      long quizCount, long plays, long stars, long comments, long shares) {
+    return new com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow() {
+      @Override
+      public long getQuizCount() {
+        return quizCount;
+      }
+
+      @Override
+      public long getPlays() {
+        return plays;
+      }
+
+      @Override
+      public long getStars() {
+        return stars;
+      }
+
+      @Override
+      public long getComments() {
+        return comments;
+      }
+
+      @Override
+      public long getShares() {
+        return shares;
+      }
+    };
+  }
+
   @Test
-  @DisplayName("getProfileStats_정상_aggregateRow매핑+weeklyPlay0")
+  @DisplayName("getProfileStats_정상_aggregateRow매핑+weeklyPlay0+avgCorrectRate_null")
   void getProfileStats_returnsAggregatedRow() {
-    com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow row =
-        new com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow() {
-          @Override
-          public long getQuizCount() {
-            return 5L;
-          }
-
-          @Override
-          public long getPlays() {
-            return 100L;
-          }
-
-          @Override
-          public long getStars() {
-            return 30L;
-          }
-
-          @Override
-          public long getComments() {
-            return 12L;
-          }
-
-          @Override
-          public long getShares() {
-            return 7L;
-          }
-        };
-    given(quizRepository.aggregateByUserId(1L)).willReturn(row);
+    given(quizRepository.aggregateByUserId(1L)).willReturn(stubAggregateRow(5, 100, 30, 12, 7));
+    given(quizAttemptRepository.countWeeklyPlaysOfQuizzesOwnedBy(eq(1L), any())).willReturn(0L);
+    given(quizAttemptRepository.perQuizCorrectRatesOwnedBy(1L)).willReturn(List.of());
 
     com.ongodmatchu.domain.user.dto.ProfileStatsResponse stats = quizService.getProfileStats(1L);
 
@@ -577,6 +584,58 @@ class QuizServiceTest {
     assertThat(stats.totalCommentCount()).isEqualTo(12L);
     assertThat(stats.totalShareCount()).isEqualTo(7L);
     assertThat(stats.weeklyPlayCount()).isZero();
+    assertThat(stats.avgCorrectRate()).isNull();
+  }
+
+  @Test
+  @DisplayName("getProfileStats_weeklyPlayCount_퀴즈attempt기반_정상집계")
+  void getProfileStats_weeklyPlayCount_aggregated() {
+    given(quizRepository.aggregateByUserId(1L)).willReturn(stubAggregateRow(3, 50, 10, 5, 2));
+    given(quizAttemptRepository.countWeeklyPlaysOfQuizzesOwnedBy(eq(1L), any())).willReturn(12L);
+    given(quizAttemptRepository.perQuizCorrectRatesOwnedBy(1L)).willReturn(List.of());
+
+    com.ongodmatchu.domain.user.dto.ProfileStatsResponse stats = quizService.getProfileStats(1L);
+
+    assertThat(stats.weeklyPlayCount()).isEqualTo(12L);
+    assertThat(stats.avgCorrectRate()).isNull();
+  }
+
+  @Test
+  @DisplayName("getProfileStats_avgCorrectRate_퀴즈1개_단순값반환")
+  void getProfileStats_avgCorrectRate_singleQuiz() {
+    given(quizRepository.aggregateByUserId(1L)).willReturn(stubAggregateRow(1, 10, 0, 0, 0));
+    given(quizAttemptRepository.countWeeklyPlaysOfQuizzesOwnedBy(eq(1L), any())).willReturn(5L);
+    given(quizAttemptRepository.perQuizCorrectRatesOwnedBy(1L)).willReturn(List.of(80.0));
+
+    com.ongodmatchu.domain.user.dto.ProfileStatsResponse stats = quizService.getProfileStats(1L);
+
+    assertThat(stats.avgCorrectRate()).isEqualTo(80.0);
+  }
+
+  @Test
+  @DisplayName("getProfileStats_avgCorrectRate_퀴즈복수_단순평균")
+  void getProfileStats_avgCorrectRate_multipleQuizzes_simpleAverage() {
+    given(quizRepository.aggregateByUserId(1L)).willReturn(stubAggregateRow(3, 30, 5, 2, 1));
+    given(quizAttemptRepository.countWeeklyPlaysOfQuizzesOwnedBy(eq(1L), any())).willReturn(3L);
+    // 퀴즈A=60, 퀴즈B=80, 퀴즈C=100 → 평균 80
+    given(quizAttemptRepository.perQuizCorrectRatesOwnedBy(1L))
+        .willReturn(List.of(60.0, 80.0, 100.0));
+
+    com.ongodmatchu.domain.user.dto.ProfileStatsResponse stats = quizService.getProfileStats(1L);
+
+    assertThat(stats.avgCorrectRate()).isEqualTo(80.0);
+  }
+
+  @Test
+  @DisplayName("getProfileStats_perQuizRates비어있으면_avgCorrectRate_null")
+  void getProfileStats_emptyPerQuizRates_avgCorrectRateIsNull() {
+    given(quizRepository.aggregateByUserId(1L)).willReturn(stubAggregateRow(2, 0, 0, 0, 0));
+    given(quizAttemptRepository.countWeeklyPlaysOfQuizzesOwnedBy(eq(1L), any())).willReturn(0L);
+    given(quizAttemptRepository.perQuizCorrectRatesOwnedBy(1L)).willReturn(List.of());
+
+    com.ongodmatchu.domain.user.dto.ProfileStatsResponse stats = quizService.getProfileStats(1L);
+
+    assertThat(stats.avgCorrectRate()).isNull();
   }
 
   // ============ getMyQuizList ============
@@ -668,6 +727,60 @@ class QuizServiceTest {
 
     assertThat(result.getContent().get(0).thumbnailUrl())
         .isEqualTo("https://signed.example/thumb.png");
+  }
+
+  @Test
+  @DisplayName("getMyQuizList_correctRateByQuizIds결과_quizId별correctRate매핑")
+  void getMyQuizList_correctRateByQuizIds_mapsToItem() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    // quizId=1 에 대한 correctRate 75.0
+    com.ongodmatchu.domain.quiz.repository.QuizAttemptRepository.QuizCorrectRateRow rateRow =
+        new com.ongodmatchu.domain.quiz.repository.QuizAttemptRepository.QuizCorrectRateRow() {
+          @Override
+          public Long getQuizId() {
+            return 1L;
+          }
+
+          @Override
+          public Double getRate() {
+            return 75.0;
+          }
+        };
+    given(quizRepository.findByUserId(eq(1L), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+    given(quizAttemptRepository.correctRateByQuizIds(List.of(1L))).willReturn(List.of(rateRow));
+
+    Page<MyQuizListItemResponse> result =
+        quizService.getMyQuizList(1L, VisibilityFilter.ALL, QuizSort.LATEST, PageRequest.of(0, 12));
+
+    assertThat(result.getContent().get(0).correctRate()).isEqualTo(75.0);
+  }
+
+  @Test
+  @DisplayName("getMyQuizList_correctRateByQuizIds결과없음_correctRate_null")
+  void getMyQuizList_noCorrectRateResult_correctRateIsNull() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findByUserId(eq(1L), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+    given(quizAttemptRepository.correctRateByQuizIds(List.of(1L))).willReturn(List.of());
+
+    Page<MyQuizListItemResponse> result =
+        quizService.getMyQuizList(1L, VisibilityFilter.ALL, QuizSort.LATEST, PageRequest.of(0, 12));
+
+    assertThat(result.getContent().get(0).correctRate()).isNull();
+  }
+
+  @Test
+  @DisplayName("getMyQuizList_퀴즈없으면_correctRateByQuizIds미호출")
+  void getMyQuizList_emptyPage_correctRateQueryNotCalled() {
+    given(quizRepository.findByUserId(eq(1L), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    quizService.getMyQuizList(1L, VisibilityFilter.ALL, QuizSort.LATEST, PageRequest.of(0, 12));
+
+    then(quizAttemptRepository).should(never()).correctRateByQuizIds(any());
   }
 
   @Test

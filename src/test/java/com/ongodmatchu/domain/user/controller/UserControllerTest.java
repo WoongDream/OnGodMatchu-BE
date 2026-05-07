@@ -14,10 +14,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
+import com.ongodmatchu.domain.quiz.dto.AttemptListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizSort;
 import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
+import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
@@ -61,6 +63,7 @@ class UserControllerTest {
 
   @MockitoBean private UserService userService;
   @MockitoBean private QuizService quizService;
+  @MockitoBean private QuizAttemptService quizAttemptService;
   @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
   private User testUser;
@@ -509,5 +512,137 @@ class UserControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.content[0].title").value("타인퀴즈"));
+  }
+
+  // ============ GET /api/users/me/attempts ============
+
+  @Test
+  @DisplayName("getMyAttempts_인증된유저_200_Page반환")
+  void getMyAttempts_authenticated_returns200WithPage() throws Exception {
+    AttemptListItemResponse item =
+        new AttemptListItemResponse(
+            100L,
+            1L,
+            UUID.fromString("00000000-0000-0000-0000-000000000010"),
+            "게임 퀴즈",
+            "game",
+            "게임",
+            null,
+            null,
+            4,
+            5,
+            80.0,
+            OffsetDateTime.of(2025, 5, 1, 12, 0, 0, 0, ZoneOffset.of("+09:00")));
+    Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
+    given(quizAttemptService.getMyAttempts(eq(1L), any(Pageable.class))).willReturn(page);
+
+    mockMvc
+        .perform(get("/api/users/me/attempts"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.content[0].id").value(100))
+        .andExpect(jsonPath("$.data.content[0].quizTitle").value("게임 퀴즈"))
+        .andExpect(jsonPath("$.data.content[0].score").value(4))
+        .andExpect(jsonPath("$.data.content[0].totalQuestions").value(5))
+        .andExpect(jsonPath("$.data.content[0].percent").value(80.0))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+  }
+
+  @Test
+  @DisplayName("getMyAttempts_풀이기록없음_200_빈페이지반환")
+  void getMyAttempts_noAttempts_returnsEmptyPage() throws Exception {
+    given(quizAttemptService.getMyAttempts(eq(1L), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/me/attempts"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  // ============ GET /api/users/{publicId}/attempts ============
+
+  @Test
+  @DisplayName("getUserAttempts_공개프로필_비로그인뷰어_200_정상반환")
+  void getUserAttempts_publicProfile_anonymousViewer_returns200() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000006");
+    AttemptListItemResponse item =
+        new AttemptListItemResponse(
+            200L,
+            2L,
+            UUID.fromString("00000000-0000-0000-0000-000000000020"),
+            "음악 퀴즈",
+            "music",
+            "음악",
+            null,
+            null,
+            3,
+            5,
+            60.0,
+            OffsetDateTime.of(2025, 4, 1, 10, 0, 0, 0, ZoneOffset.of("+09:00")));
+    Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
+    given(
+            quizAttemptService.getAttemptsByPublicId(
+                eq(targetPublicId), eq(null), any(Pageable.class)))
+        .willReturn(page);
+
+    SecurityContextHolder.clearContext();
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/attempts", targetPublicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.content[0].id").value(200))
+        .andExpect(jsonPath("$.data.content[0].quizTitle").value("음악 퀴즈"))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+  }
+
+  @Test
+  @DisplayName("getUserAttempts_비공개프로필_외부뷰어_200_빈페이지반환")
+  void getUserAttempts_privateProfile_externalViewer_returnsEmptyPage() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000007");
+    given(quizAttemptService.getAttemptsByPublicId(eq(targetPublicId), eq(1L), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/attempts", targetPublicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  @Test
+  @DisplayName("getUserAttempts_로그인뷰어_viewerUserId전달_200반환")
+  void getUserAttempts_authenticatedViewer_passesViewerId() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000008");
+    AttemptListItemResponse item =
+        new AttemptListItemResponse(
+            300L,
+            3L,
+            UUID.fromString("00000000-0000-0000-0000-000000000030"),
+            "애니 퀴즈",
+            "anime",
+            "애니메이션",
+            null,
+            null,
+            5,
+            5,
+            100.0,
+            OffsetDateTime.of(2025, 3, 15, 9, 0, 0, 0, ZoneOffset.of("+09:00")));
+    Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
+    given(quizAttemptService.getAttemptsByPublicId(eq(targetPublicId), eq(1L), any(Pageable.class)))
+        .willReturn(page);
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/attempts", targetPublicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content[0].quizTitle").value("애니 퀴즈"))
+        .andExpect(jsonPath("$.data.content[0].percent").value(100.0));
   }
 }
