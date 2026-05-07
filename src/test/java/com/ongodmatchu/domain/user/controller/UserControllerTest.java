@@ -373,6 +373,7 @@ class UserControllerTest {
   void getMyQuizzes_authenticated_returns200WithPage() throws Exception {
     MyQuizListItemResponse item =
         new MyQuizListItemResponse(
+            10L,
             UUID.fromString("00000000-0000-0000-0000-000000000010"),
             "내 퀴즈",
             "game",
@@ -428,6 +429,7 @@ class UserControllerTest {
     UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000003");
     MyQuizListItemResponse item =
         new MyQuizListItemResponse(
+            11L,
             UUID.fromString("00000000-0000-0000-0000-000000000011"),
             "공개 퀴즈",
             "music",
@@ -481,6 +483,7 @@ class UserControllerTest {
     UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000005");
     MyQuizListItemResponse item =
         new MyQuizListItemResponse(
+            12L,
             UUID.fromString("00000000-0000-0000-0000-000000000012"),
             "타인퀴즈",
             "etc",

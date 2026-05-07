@@ -10,7 +10,8 @@ import java.util.UUID;
 
 /** 프로필 (내가 만든 퀴즈 / 외부 뷰어용) 리스트 아이템. {@code correctRate} 는 풀이 기록 머지 후 채워질 자리이며 1차에서는 항상 null. */
 public record MyQuizListItemResponse(
-    UUID quizId,
+    @Schema(description = "퀴즈 numeric ID — 라우팅/상세/편집/삭제 호출 시 사용") Long id,
+    @Schema(description = "퀴즈 publicId UUID — 향후 공유링크 용도 (현재 라우팅에는 사용 X)") UUID quizId,
     String title,
     @Schema(description = "카테고리 영문 키 (game/movie/...)") String category,
     @Schema(description = "카테고리 한국어 라벨 (게임/영화/...)") String categoryLabel,
@@ -31,6 +32,7 @@ public record MyQuizListItemResponse(
 
   public static MyQuizListItemResponse from(Quiz quiz, String thumbnailUrl) {
     return new MyQuizListItemResponse(
+        quiz.getId(),
         quiz.getPublicId(),
         quiz.getTitle(),
         quiz.getCategory(),
