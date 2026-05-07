@@ -3,15 +3,22 @@ package com.ongodmatchu.domain.quiz.service;
 import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
+import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuestionResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizSort;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
+import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizCategory;
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
+import com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow;
+import com.ongodmatchu.domain.quiz.repository.QuizStarRepository;
+import com.ongodmatchu.domain.user.dto.ProfileStatsResponse;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
 import com.ongodmatchu.global.exception.BusinessException;
@@ -24,6 +31,7 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +44,7 @@ public class QuizService {
   private final QuizRepository quizRepository;
   private final QuestionRepository questionRepository;
   private final UserRepository userRepository;
+  private final QuizStarRepository quizStarRepository;
   private final S3Service s3Service;
 
   public List<CategoryResponse> getCategories() {
@@ -46,8 +55,8 @@ public class QuizService {
   public Page<QuizResponse> getQuizList(String category, Pageable pageable) {
     Page<Quiz> page =
         StringUtils.hasText(category)
-            ? quizRepository.findByCategory(category, pageable)
-            : quizRepository.findAll(pageable);
+            ? quizRepository.findByCategoryAndVisibility(category, QuizVisibility.PUBLIC, pageable)
+            : quizRepository.findByVisibility(QuizVisibility.PUBLIC, pageable);
 
     List<String> keys =
         page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
@@ -61,11 +70,16 @@ public class QuizService {
   }
 
   @Transactional(readOnly = true)
-  public QuizDetailResponse getQuizDetail(Long quizId) {
+  public QuizDetailResponse getQuizDetail(Long quizId, Long viewerUserId) {
     Quiz quiz =
         quizRepository
             .findById(quizId)
             .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
+
+    boolean isOwner = viewerUserId != null && viewerUserId.equals(quiz.getUser().getId());
+    if (quiz.getVisibility() == QuizVisibility.PRIVATE && !isOwner) {
+      throw new BusinessException(ErrorCode.QUIZ_NOT_FOUND);
+    }
     List<Question> questions = questionRepository.findByQuizIdOrderByOrderNum(quizId);
 
     List<String> keys = new ArrayList<>();
@@ -86,8 +100,12 @@ public class QuizService {
                         lookupUrl(presigned, q.getAnswerImageKey())))
             .toList();
 
+    Boolean isStarred =
+        viewerUserId == null
+            ? null
+            : quizStarRepository.existsByUserIdAndQuizId(viewerUserId, quiz.getId());
     return QuizDetailResponse.of(
-        quiz, lookupUrl(presigned, quiz.getThumbnailKey()), questionResponses);
+        quiz, lookupUrl(presigned, quiz.getThumbnailKey()), isStarred, questionResponses);
   }
 
   @Transactional
@@ -116,6 +134,7 @@ public class QuizService {
             .description(request.description())
             .category(request.category())
             .thumbnailKey(request.thumbnailKey())
+            .visibility(request.visibility())
             .build();
     quizRepository.save(quiz);
 
@@ -139,44 +158,96 @@ public class QuizService {
     return QuizResponse.from(quiz, thumbnailUrl);
   }
 
+  /** 플레이 카운터 증분. PRIVATE 퀴즈는 본인만 호출 가능 (외부에서는 노출 자체가 안 되므로). */
   @Transactional
-  public void incrementPlayCount(Long quizId) {
+  public void incrementPlayCount(Long quizId, Long viewerUserId) {
     Quiz quiz =
         quizRepository
             .findById(quizId)
             .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
+    boolean isOwner = viewerUserId != null && viewerUserId.equals(quiz.getUser().getId());
+    if (quiz.getVisibility() == QuizVisibility.PRIVATE && !isOwner) {
+      throw new BusinessException(ErrorCode.QUIZ_NOT_FOUND);
+    }
     quiz.incrementPlayCount();
   }
 
-  /** 본인의 퀴즈 목록. */
-  @Transactional(readOnly = true)
-  public Page<QuizResponse> getMyQuizList(Long userId, Pageable pageable) {
-    Page<Quiz> page = quizRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
-    return mapWithThumbnails(page);
+  /** 공유 카운터 증분. PRIVATE 퀴즈는 본인만 호출 가능 (외부에서 노출 자체가 안 되므로). */
+  @Transactional
+  public void incrementShareCount(Long quizId, Long viewerUserId) {
+    Quiz quiz =
+        quizRepository
+            .findById(quizId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
+    boolean isOwner = viewerUserId != null && viewerUserId.equals(quiz.getUser().getId());
+    if (quiz.getVisibility() == QuizVisibility.PRIVATE && !isOwner) {
+      throw new BusinessException(ErrorCode.QUIZ_NOT_FOUND);
+    }
+    quiz.incrementShareCount();
   }
 
-  /** 타 유저의 퀴즈 목록. 비공개 프로필 + 외부 뷰어면 빈 페이지. */
+  private static final int MAX_PAGE_SIZE = 50;
+  private static final int DEFAULT_PAGE_SIZE = 20;
+
+  /** 본인의 퀴즈 목록 — visibility 필터 + sort 옵션 + 페이지네이션 cap. */
   @Transactional(readOnly = true)
-  public Page<QuizResponse> getQuizListByPublicId(
-      UUID publicId, Long viewerUserId, Pageable pageable) {
+  public Page<MyQuizListItemResponse> getMyQuizList(
+      Long userId, VisibilityFilter visibility, QuizSort sort, Pageable pageable) {
+    Pageable effective = applyPageDefaults(pageable, sort);
+    Page<Quiz> page =
+        switch (visibility) {
+          case ALL -> quizRepository.findByUserId(userId, effective);
+          case PUBLIC ->
+              quizRepository.findByUserIdAndVisibility(userId, QuizVisibility.PUBLIC, effective);
+          case PRIVATE ->
+              quizRepository.findByUserIdAndVisibility(userId, QuizVisibility.PRIVATE, effective);
+        };
+    return mapToListItems(page);
+  }
+
+  /** 타 유저의 퀴즈 목록. 비공개 프로필 + 외부 뷰어면 빈 페이지. 외부 뷰어는 PUBLIC 퀴즈만, 본인은 전체 노출. 응답 스키마는 본인 목록과 통일. */
+  @Transactional(readOnly = true)
+  public Page<MyQuizListItemResponse> getQuizListByPublicId(
+      UUID publicId, Long viewerUserId, QuizSort sort, Pageable pageable) {
     User author =
         userRepository
             .findByPublicId(publicId)
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
     boolean isOwner = viewerUserId != null && viewerUserId.equals(author.getId());
+    Pageable effective = applyPageDefaults(pageable, sort);
     if (!author.isProfilePublic() && !isOwner) {
-      return Page.empty(pageable);
+      return Page.empty(effective);
     }
-    return mapWithThumbnails(
-        quizRepository.findByUserIdOrderByCreatedAtDesc(author.getId(), pageable));
+    Page<Quiz> page =
+        isOwner
+            ? quizRepository.findByUserId(author.getId(), effective)
+            : quizRepository.findByUserIdAndVisibility(
+                author.getId(), QuizVisibility.PUBLIC, effective);
+    return mapToListItems(page);
   }
 
-  private Page<QuizResponse> mapWithThumbnails(Page<Quiz> page) {
+  private Page<MyQuizListItemResponse> mapToListItems(Page<Quiz> page) {
     List<String> keys =
         page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
     Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
-    return page.map(q -> QuizResponse.from(q, lookupUrl(presigned, q.getThumbnailKey())));
+    return page.map(q -> MyQuizListItemResponse.from(q, lookupUrl(presigned, q.getThumbnailKey())));
+  }
+
+  /** 프로필 (내가 만든 퀴즈) 페이지 상단 통계. {@code weeklyPlayCount} 는 풀이 기록 묶음 머지 전까지 0 으로 반환. */
+  @Transactional(readOnly = true)
+  public ProfileStatsResponse getProfileStats(Long userId) {
+    QuizAggregateRow row = quizRepository.aggregateByUserId(userId);
+    return new ProfileStatsResponse(
+        row.getQuizCount(), row.getPlays(), row.getStars(), row.getComments(), row.getShares(), 0L);
+  }
+
+  private Pageable applyPageDefaults(Pageable pageable, QuizSort sort) {
+    int size = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
+    if (size <= 0) {
+      size = DEFAULT_PAGE_SIZE;
+    }
+    return PageRequest.of(pageable.getPageNumber(), size, sort.toSort());
   }
 
   @Transactional
@@ -202,6 +273,9 @@ public class QuizService {
       if (previousThumbnailKey != null) {
         s3Service.deleteQuietly(previousThumbnailKey);
       }
+    }
+    if (request.visibility() != null) {
+      quiz.changeVisibility(request.visibility());
     }
 
     String thumbnailUrl =

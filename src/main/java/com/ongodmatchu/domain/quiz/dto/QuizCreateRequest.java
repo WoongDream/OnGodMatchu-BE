@@ -1,5 +1,6 @@
 package com.ongodmatchu.domain.quiz.dto;
 
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -10,4 +11,5 @@ public record QuizCreateRequest(
     String description,
     @NotBlank(message = "카테고리를 입력해주세요.") String category,
     String thumbnailKey,
+    QuizVisibility visibility,
     @NotEmpty(message = "문제를 1개 이상 입력해주세요.") @Valid List<QuestionCreateRequest> questions) {}

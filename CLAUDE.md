@@ -25,4 +25,6 @@ com.ongodmatchu/
 - Test code is written using the `unit-test-generator` agent
 
 ## References
-Conventions: `docs/conventions.md`
+- Conventions (코드 스타일): `docs/conventions.md`
+- API 개발 가이드 (패턴/체크리스트/실수 방지): `docs/api-development.md`
+- ErrorCode 카탈로그 (status/code/발생 endpoint): `docs/error-codes.md`
