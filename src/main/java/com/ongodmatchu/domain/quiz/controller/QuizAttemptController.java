@@ -21,7 +21,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/quizzes/{quizId}/attempts")
 @RequiredArgsConstructor
-@Tag(name = "QuizAttempt", description = "퀴즈 풀이 기록 (서버 채점) — 비로그인 풀이는 결과만 반환, attempt 저장 X")
+@Tag(
+    name = "QuizAttempt",
+    description =
+        "퀴즈 풀이 기록 (서버 채점). 비로그인 풀이도 익명(user=null)으로 저장 → 퀴즈 작성자 기준 집계(weeklyPlayCount / correctRate)에 반영")
 public class QuizAttemptController {
 
   private final QuizAttemptService quizAttemptService;
@@ -29,8 +32,8 @@ public class QuizAttemptController {
   @Operation(
       summary = "풀이 제출 (A안 서버 채점)",
       description =
-          "answers[] 를 서버에서 채점 후 score/total/문항별 결과 반환 + Quiz.playCount 증분. "
-              + "로그인 시 attempt 저장. 비로그인 시 attemptId=null. "
+          "answers[] 를 서버에서 채점 후 score/total/문항별 결과 반환 + Quiz.playCount 증분 + attempts insert. "
+              + "비로그인 시 user=null 로 익명 저장 (응답 attemptId 만 null). 작성자 기준 집계에는 반영, '내 풀이 기록' 에는 미노출. "
               + "PRIVATE 퀴즈 + 외부 뷰어 → QUIZ_NOT_FOUND(404). "
               + "가능 에러: QUIZ_NOT_FOUND(404), QUESTION_NOT_FOUND(404), INVALID_INPUT(400)")
   @PostMapping

@@ -45,8 +45,9 @@ public class QuizAttemptService {
   private final S3Service s3Service;
 
   /**
-   * 풀이 1회 제출 (A안 — 서버 일괄 채점). PRIVATE 퀴즈 + 외부 뷰어면 QUIZ_NOT_FOUND. Quiz.playCount 는 비로그인 포함 항상 증분,
-   * attempt 저장은 로그인 시에만.
+   * 풀이 1회 제출 (A안 — 서버 일괄 채점). PRIVATE 퀴즈 + 외부 뷰어면 QUIZ_NOT_FOUND. attempt 는 비로그인 포함 항상 저장 (비로그인이면
+   * user=null) → 퀴즈 작성자 기준 집계(weeklyPlayCount / correctRate)에 반영. "내 풀이 기록"(/me/attempts) 은 user_id
+   * 로 필터하므로 비로그인 attempt 는 자연 제외.
    */
   @Transactional
   public AttemptResultResponse submit(
@@ -86,22 +87,22 @@ public class QuizAttemptService {
     int totalQuestions = questions.size();
     quiz.incrementPlayCount();
 
-    Long attemptId = null;
+    User user = null;
     if (viewerUserId != null) {
-      User user =
+      user =
           userRepository
               .findById(viewerUserId)
               .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-      QuizAttempt saved =
-          quizAttemptRepository.save(
-              QuizAttempt.builder()
-                  .user(user)
-                  .quiz(quiz)
-                  .score(score)
-                  .totalQuestions(totalQuestions)
-                  .build());
-      attemptId = saved.getId();
     }
+    QuizAttempt saved =
+        quizAttemptRepository.save(
+            QuizAttempt.builder()
+                .user(user)
+                .quiz(quiz)
+                .score(score)
+                .totalQuestions(totalQuestions)
+                .build());
+    Long attemptId = viewerUserId != null ? saved.getId() : null;
 
     Double percent = totalQuestions > 0 ? (score * 100.0 / totalQuestions) : null;
     return new AttemptResultResponse(attemptId, score, totalQuestions, percent, results);

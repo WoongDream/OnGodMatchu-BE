@@ -176,13 +176,20 @@ class QuizAttemptServiceTest {
   }
 
   @Test
-  @DisplayName("submit_비로그인_attempt저장안됨_playCount는증분")
-  void submit_anonymous_noAttemptSaved_playCountIncremented() {
+  @DisplayName("submit_비로그인_익명attempt저장(user=null)_attemptId는응답에서null_playCount증분")
+  void submit_anonymous_savesAttemptWithNullUser_responseAttemptIdNull() {
     User owner = testUser(1L);
     Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
     Question q = testQuestion(quiz, 10L, "정답");
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
     given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
+    given(quizAttemptRepository.save(any(QuizAttempt.class)))
+        .willAnswer(
+            inv -> {
+              QuizAttempt a = inv.getArgument(0);
+              ReflectionTestUtils.setField(a, "id", 999L);
+              return a;
+            });
 
     AttemptCreateRequest request =
         new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
@@ -191,8 +198,15 @@ class QuizAttemptServiceTest {
 
     assertThat(result.attemptId()).isNull();
     assertThat(quiz.getPlayCount()).isEqualTo(1);
-    then(quizAttemptRepository).should(never()).save(any());
     then(userRepository).should(never()).findById(any());
+
+    ArgumentCaptor<QuizAttempt> captor = ArgumentCaptor.forClass(QuizAttempt.class);
+    then(quizAttemptRepository).should().save(captor.capture());
+    QuizAttempt saved = captor.getValue();
+    assertThat(saved.getUser()).isNull();
+    assertThat(saved.getQuiz()).isEqualTo(quiz);
+    assertThat(saved.getScore()).isEqualTo(1);
+    assertThat(saved.getTotalQuestions()).isEqualTo(1);
   }
 
   @Test

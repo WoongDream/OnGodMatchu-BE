@@ -17,7 +17,10 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 퀴즈 풀이 1회 기록. 서버 채점(A안) 결과만 저장. 비로그인 풀이는 저장 X. */
+/**
+ * 퀴즈 풀이 1회 기록. 서버 채점(A안) 결과 저장. 비로그인 풀이는 user=null 로 저장 — 퀴즈 작성자 기준 집계(weeklyPlayCount /
+ * correctRate)에 반영되도록 함. "내 풀이 기록" 조회는 user_id 로 필터하므로 비로그인 attempt 는 자연 제외.
+ */
 @Entity
 @Table(name = "quiz_attempts")
 @Getter
@@ -29,7 +32,7 @@ public class QuizAttempt {
   private Long id;
 
   @ManyToOne(fetch = FetchType.LAZY)
-  @JoinColumn(name = "user_id", nullable = false)
+  @JoinColumn(name = "user_id")
   private User user;
 
   @ManyToOne(fetch = FetchType.LAZY)
