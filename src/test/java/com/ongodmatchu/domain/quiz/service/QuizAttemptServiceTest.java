@@ -400,6 +400,48 @@ class QuizAttemptServiceTest {
   }
 
   @Test
+  @DisplayName("submit_answerImageKey있는질문_correctAnswerImageUrl에presigned매핑")
+  void submit_questionWithAnswerImageKey_mapsPresignedUrl() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    Question q1 = testQuestion(quiz, 10L, "정답1");
+    Question q2 = testQuestion(quiz, 11L, "정답2");
+    ReflectionTestUtils.setField(q1, "answerImageKey", "quiz-images/ans1.png");
+    ReflectionTestUtils.setField(q2, "orderNum", 2);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q1, q2));
+    given(s3Service.batchPresignViewUrls(List.of("quiz-images/ans1.png")))
+        .willReturn(Map.of("quiz-images/ans1.png", "https://signed.example/ans1.png"));
+
+    AttemptCreateRequest request =
+        new AttemptCreateRequest(
+            List.of(new AttemptAnswerRequest(10L, "정답1"), new AttemptAnswerRequest(11L, "정답2")));
+
+    AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
+
+    assertThat(result.results().get(0).correctAnswerImageUrl())
+        .isEqualTo("https://signed.example/ans1.png");
+    assertThat(result.results().get(1).correctAnswerImageUrl()).isNull();
+  }
+
+  @Test
+  @DisplayName("submit_answerImageKey없으면_correctAnswerImageUrl_null")
+  void submit_noAnswerImageKey_correctAnswerImageUrlNull() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    Question q = testQuestion(quiz, 10L, "정답");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
+
+    AttemptCreateRequest request =
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+
+    AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
+
+    assertThat(result.results().get(0).correctAnswerImageUrl()).isNull();
+  }
+
+  @Test
   @DisplayName("submit_attempt저장시user/quiz/score/totalQuestions정확히전달")
   void submit_savedAttemptHasCorrectFields() {
     User owner = testUser(1L);

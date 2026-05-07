@@ -68,6 +68,10 @@ public class QuizAttemptService {
       byId.put(q.getId(), q);
     }
 
+    List<String> answerImageKeys =
+        questions.stream().map(Question::getAnswerImageKey).filter(k -> k != null).toList();
+    Map<String, String> answerImageUrls = s3Service.batchPresignViewUrls(answerImageKeys);
+
     List<AttemptItemResultResponse> results = new ArrayList<>(request.answers().size());
     int score = 0;
     for (AttemptAnswerRequest a : request.answers()) {
@@ -81,7 +85,13 @@ public class QuizAttemptService {
       if (correct) {
         score++;
       }
-      results.add(new AttemptItemResultResponse(q.getId(), correct, q.getAnswer(), a.userAnswer()));
+      results.add(
+          new AttemptItemResultResponse(
+              q.getId(),
+              correct,
+              q.getAnswer(),
+              a.userAnswer(),
+              lookupUrl(answerImageUrls, q.getAnswerImageKey())));
     }
 
     int totalQuestions = questions.size();

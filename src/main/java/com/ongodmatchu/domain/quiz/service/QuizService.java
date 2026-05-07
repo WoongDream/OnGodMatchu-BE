@@ -71,7 +71,23 @@ public class QuizService {
         page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
     Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
 
-    return page.map(q -> QuizResponse.from(q, lookupUrl(presigned, q.getThumbnailKey())));
+    Map<Long, Double> rateByQuizId = rateMapForPage(page);
+
+    return page.map(
+        q ->
+            QuizResponse.from(
+                q, lookupUrl(presigned, q.getThumbnailKey()), null, rateByQuizId.get(q.getId())));
+  }
+
+  private Map<Long, Double> rateMapForPage(Page<Quiz> page) {
+    List<Long> quizIds = page.getContent().stream().map(Quiz::getId).toList();
+    Map<Long, Double> rateByQuizId = new HashMap<>();
+    if (!quizIds.isEmpty()) {
+      for (QuizCorrectRateRow r : quizAttemptRepository.correctRateByQuizIds(quizIds)) {
+        rateByQuizId.put(r.getQuizId(), r.getRate());
+      }
+    }
+    return rateByQuizId;
   }
 
   private static String lookupUrl(Map<String, String> presigned, String key) {
@@ -113,8 +129,14 @@ public class QuizService {
         viewerUserId == null
             ? null
             : quizStarRepository.existsByUserIdAndQuizId(viewerUserId, quiz.getId());
+    Double correctRate = singleQuizCorrectRate(quiz.getId());
+
     return QuizDetailResponse.of(
-        quiz, lookupUrl(presigned, quiz.getThumbnailKey()), isStarred, questionResponses);
+        quiz,
+        lookupUrl(presigned, quiz.getThumbnailKey()),
+        isStarred,
+        correctRate,
+        questionResponses);
   }
 
   @Transactional
@@ -321,7 +343,13 @@ public class QuizService {
         quiz.getThumbnailKey() == null
             ? null
             : s3Service.generateViewUrl(quiz.getThumbnailKey()).viewUrl();
-    return QuizResponse.from(quiz, thumbnailUrl);
+    Double correctRate = singleQuizCorrectRate(quiz.getId());
+    return QuizResponse.from(quiz, thumbnailUrl, null, correctRate);
+  }
+
+  private Double singleQuizCorrectRate(Long quizId) {
+    List<QuizCorrectRateRow> rows = quizAttemptRepository.correctRateByQuizIds(List.of(quizId));
+    return rows.isEmpty() ? null : rows.get(0).getRate();
   }
 
   @Transactional

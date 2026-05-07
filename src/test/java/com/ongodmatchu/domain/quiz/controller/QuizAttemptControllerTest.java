@@ -82,7 +82,7 @@ class QuizAttemptControllerTest {
 
     AttemptResultResponse response =
         new AttemptResultResponse(
-            100L, 1, 1, 100.0, List.of(new AttemptItemResultResponse(10L, true, "정답", "정답")));
+            100L, 1, 1, 100.0, List.of(new AttemptItemResultResponse(10L, true, "정답", "정답", null)));
 
     given(quizAttemptService.submit(eq(1L), eq(1L), any(AttemptCreateRequest.class)))
         .willReturn(response);
@@ -111,7 +111,7 @@ class QuizAttemptControllerTest {
 
     AttemptResultResponse response =
         new AttemptResultResponse(
-            null, 1, 1, 100.0, List.of(new AttemptItemResultResponse(10L, true, "정답", "정답")));
+            null, 1, 1, 100.0, List.of(new AttemptItemResultResponse(10L, true, "정답", "정답", null)));
 
     SecurityContextHolder.clearContext();
 
@@ -228,8 +228,9 @@ class QuizAttemptControllerTest {
             2,
             50.0,
             List.of(
-                new AttemptItemResultResponse(10L, true, "정답", "정답"),
-                new AttemptItemResultResponse(11L, false, "답2", "틀림")));
+                new AttemptItemResultResponse(10L, true, "정답", "정답", null),
+                new AttemptItemResultResponse(
+                    11L, false, "답2", "틀림", "https://signed.example/answer.png")));
 
     given(quizAttemptService.submit(eq(1L), eq(1L), any(AttemptCreateRequest.class)))
         .willReturn(response);
@@ -244,6 +245,10 @@ class QuizAttemptControllerTest {
         .andExpect(jsonPath("$.data.totalQuestions").value(2))
         .andExpect(jsonPath("$.data.percent").value(50.0))
         .andExpect(jsonPath("$.data.results[1].correct").value(false))
-        .andExpect(jsonPath("$.data.results[1].correctAnswer").value("답2"));
+        .andExpect(jsonPath("$.data.results[1].correctAnswer").value("답2"))
+        .andExpect(jsonPath("$.data.results[0].correctAnswerImageUrl").isEmpty())
+        .andExpect(
+            jsonPath("$.data.results[1].correctAnswerImageUrl")
+                .value("https://signed.example/answer.png"));
   }
 }
