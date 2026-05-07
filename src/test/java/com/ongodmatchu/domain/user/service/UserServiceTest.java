@@ -441,7 +441,8 @@ class UserServiceTest {
   @DisplayName("issueProfileImageUploadUrl_S3Service위임검증")
   void issueProfileImageUploadUrl_delegatesToS3Service() {
     PresignedUrlRequest request = new PresignedUrlRequest("photo.jpg", "image/jpeg", 1024L);
-    PresignedUrlResponse expected = new PresignedUrlResponse("https://s3.presigned", "key", 600L);
+    PresignedUrlResponse expected =
+        new PresignedUrlResponse("https://s3.presigned", "key", 600L, java.util.Map.of());
     given(s3Service.generateProfileImageUploadUrl(1L, request)).willReturn(expected);
 
     PresignedUrlResponse result = userService.issueProfileImageUploadUrl(1L, request);

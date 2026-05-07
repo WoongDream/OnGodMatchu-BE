@@ -390,13 +390,41 @@ class QuizServiceTest {
   }
 
   @Test
-  @DisplayName("플레이 카운트 증가")
+  @DisplayName("incrementPlayCount_PUBLIC퀴즈_비로그인_정상증가")
   void incrementPlayCount_success() {
     User user = testUser();
     Quiz quiz = testQuiz(user);
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
-    quizService.incrementPlayCount(1L);
+    quizService.incrementPlayCount(1L, null);
+
+    assertThat(quiz.getPlayCount()).isEqualTo(1);
+  }
+
+  @Test
+  @DisplayName("incrementPlayCount_PRIVATE퀴즈_외부유저_QUIZ_NOT_FOUND")
+  void incrementPlayCount_privateQuiz_externalUser_throws() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    assertThatThrownBy(() -> quizService.incrementPlayCount(1L, 99L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+    assertThat(quiz.getPlayCount()).isZero();
+  }
+
+  @Test
+  @DisplayName("incrementPlayCount_PRIVATE퀴즈_본인_정상증가")
+  void incrementPlayCount_privateQuiz_owner() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    quizService.incrementPlayCount(1L, 1L);
 
     assertThat(quiz.getPlayCount()).isEqualTo(1);
   }
@@ -501,7 +529,7 @@ class QuizServiceTest {
   void incrementPlayCount_quizNotFound() {
     given(quizRepository.findById(99L)).willReturn(Optional.empty());
 
-    assertThatThrownBy(() -> quizService.incrementPlayCount(99L))
+    assertThatThrownBy(() -> quizService.incrementPlayCount(99L, null))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);

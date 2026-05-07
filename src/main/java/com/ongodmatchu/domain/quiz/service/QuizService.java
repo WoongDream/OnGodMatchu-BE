@@ -100,9 +100,10 @@ public class QuizService {
                         lookupUrl(presigned, q.getAnswerImageKey())))
             .toList();
 
-    boolean isStarred =
-        viewerUserId != null
-            && quizStarRepository.existsByUserIdAndQuizId(viewerUserId, quiz.getId());
+    Boolean isStarred =
+        viewerUserId == null
+            ? null
+            : quizStarRepository.existsByUserIdAndQuizId(viewerUserId, quiz.getId());
     return QuizDetailResponse.of(
         quiz, lookupUrl(presigned, quiz.getThumbnailKey()), isStarred, questionResponses);
   }
@@ -157,12 +158,17 @@ public class QuizService {
     return QuizResponse.from(quiz, thumbnailUrl);
   }
 
+  /** 플레이 카운터 증분. PRIVATE 퀴즈는 본인만 호출 가능 (외부에서는 노출 자체가 안 되므로). */
   @Transactional
-  public void incrementPlayCount(Long quizId) {
+  public void incrementPlayCount(Long quizId, Long viewerUserId) {
     Quiz quiz =
         quizRepository
             .findById(quizId)
             .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
+    boolean isOwner = viewerUserId != null && viewerUserId.equals(quiz.getUser().getId());
+    if (quiz.getVisibility() == QuizVisibility.PRIVATE && !isOwner) {
+      throw new BusinessException(ErrorCode.QUIZ_NOT_FOUND);
+    }
     quiz.incrementPlayCount();
   }
 

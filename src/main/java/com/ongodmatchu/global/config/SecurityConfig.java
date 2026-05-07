@@ -5,6 +5,7 @@ import com.ongodmatchu.domain.auth.jwt.JwtProvider;
 import com.ongodmatchu.domain.auth.oauth2.CustomOAuth2UserService;
 import com.ongodmatchu.domain.auth.oauth2.OAuth2AuthenticationFailureHandler;
 import com.ongodmatchu.domain.auth.oauth2.OAuth2AuthenticationSuccessHandler;
+import com.ongodmatchu.domain.auth.security.ApiAuthenticationEntryPoint;
 import com.ongodmatchu.domain.auth.security.CustomUserDetailsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -31,12 +32,14 @@ public class SecurityConfig {
   private final OAuth2AuthenticationSuccessHandler oAuth2SuccessHandler;
   private final OAuth2AuthenticationFailureHandler oAuth2FailureHandler;
   private final CorsConfigurationSource corsConfigurationSource;
+  private final ApiAuthenticationEntryPoint authenticationEntryPoint;
 
   @Bean
   public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
     return http.csrf(AbstractHttpConfigurer::disable)
         .cors(cors -> cors.configurationSource(corsConfigurationSource))
         .sessionManagement(sm -> sm.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+        .exceptionHandling(eh -> eh.authenticationEntryPoint(authenticationEntryPoint))
         .authorizeHttpRequests(
             auth ->
                 auth.requestMatchers(HttpMethod.OPTIONS, "/**")

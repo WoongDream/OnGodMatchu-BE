@@ -29,7 +29,8 @@ import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.service.UserService;
 import com.ongodmatchu.infra.s3.PresignedUrlRequest;
 import com.ongodmatchu.infra.s3.PresignedUrlResponse;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -90,7 +91,7 @@ class UserControllerTest {
             "user@example.com",
             "https://cdn.example.com/default.png",
             "안녕하세요",
-            LocalDateTime.of(2024, 1, 1, 0, 0),
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,
             true,
             "LOCAL");
@@ -170,7 +171,7 @@ class UserControllerTest {
             "anon@example.com",
             "https://cdn.example.com/default.png",
             null,
-            LocalDateTime.of(2024, 1, 1, 0, 0),
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             10L,
             true,
             "LOCAL");
@@ -198,7 +199,7 @@ class UserControllerTest {
             "user@example.com",
             "https://cdn.example.com/default.png",
             "새한줄소개",
-            LocalDateTime.of(2024, 1, 1, 0, 0),
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,
             true,
             "LOCAL");
@@ -275,7 +276,10 @@ class UserControllerTest {
     PresignedUrlRequest request = new PresignedUrlRequest("photo.jpg", "image/jpeg", 1024L);
     PresignedUrlResponse response =
         new PresignedUrlResponse(
-            "https://s3.presigned/upload", "profile-images/uuid/photo.jpg", 600L);
+            "https://s3.presigned/upload",
+            "profile-images/uuid/photo.jpg",
+            600L,
+            java.util.Map.of("Content-Type", "image/jpeg", "x-amz-tagging", "status=pending"));
     given(userService.issueProfileImageUploadUrl(eq(1L), any(PresignedUrlRequest.class)))
         .willReturn(response);
 
@@ -349,7 +353,7 @@ class UserControllerTest {
             "user@example.com",
             "https://cdn.example.com/default.png",
             null,
-            LocalDateTime.of(2024, 1, 1, 0, 0),
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,
             true,
             "LOCAL");
@@ -381,8 +385,8 @@ class UserControllerTest {
             0,
             0,
             null,
-            LocalDateTime.of(2024, 1, 1, 0, 0),
-            LocalDateTime.of(2024, 1, 1, 0, 0));
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<MyQuizListItemResponse> page = new PageImpl<>(List.of(item));
     given(
             quizService.getMyQuizList(
@@ -436,8 +440,8 @@ class UserControllerTest {
             0,
             0,
             null,
-            LocalDateTime.of(2024, 6, 1, 0, 0),
-            LocalDateTime.of(2024, 6, 1, 0, 0));
+            OffsetDateTime.of(2024, 6, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            OffsetDateTime.of(2024, 6, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<MyQuizListItemResponse> page = new PageImpl<>(List.of(item));
     given(
             quizService.getQuizListByPublicId(
@@ -489,8 +493,8 @@ class UserControllerTest {
             0,
             0,
             null,
-            LocalDateTime.of(2024, 3, 1, 0, 0),
-            LocalDateTime.of(2024, 3, 1, 0, 0));
+            OffsetDateTime.of(2024, 3, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            OffsetDateTime.of(2024, 3, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<MyQuizListItemResponse> page = new PageImpl<>(List.of(item));
     given(
             quizService.getQuizListByPublicId(

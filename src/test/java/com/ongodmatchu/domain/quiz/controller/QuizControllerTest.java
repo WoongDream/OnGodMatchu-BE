@@ -21,7 +21,8 @@ import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -87,7 +88,7 @@ class QuizControllerTest {
             false,
             QuizVisibility.PUBLIC,
             "퀴즈작성자",
-            LocalDateTime.of(2024, 1, 1, 0, 0));
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
   }
 
   @AfterEach
@@ -117,7 +118,7 @@ class QuizControllerTest {
             false,
             QuizVisibility.PUBLIC,
             "퀴즈작성자",
-            LocalDateTime.of(2024, 1, 1, 0, 0));
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
     given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class))).willReturn(updated);
 
     mockMvc

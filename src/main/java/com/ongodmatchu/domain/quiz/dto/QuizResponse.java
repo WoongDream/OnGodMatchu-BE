@@ -2,7 +2,8 @@ package com.ongodmatchu.domain.quiz.dto;
 
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
-import java.time.LocalDateTime;
+import com.ongodmatchu.global.util.TimeFormat;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record QuizResponse(
@@ -17,16 +18,16 @@ public record QuizResponse(
     int starCount,
     int commentCount,
     int shareCount,
-    boolean isStarred,
+    Boolean isStarred,
     QuizVisibility visibility,
     String authorNickname,
-    LocalDateTime createdAt) {
+    OffsetDateTime createdAt) {
 
   public static QuizResponse from(Quiz quiz, String thumbnailUrl) {
-    return from(quiz, thumbnailUrl, false);
+    return from(quiz, thumbnailUrl, null);
   }
 
-  public static QuizResponse from(Quiz quiz, String thumbnailUrl, boolean isStarred) {
+  public static QuizResponse from(Quiz quiz, String thumbnailUrl, Boolean isStarred) {
     return new QuizResponse(
         quiz.getId(),
         quiz.getPublicId(),
@@ -42,6 +43,6 @@ public record QuizResponse(
         isStarred,
         quiz.getVisibility(),
         quiz.getUser().getNickname(),
-        quiz.getCreatedAt());
+        TimeFormat.toResponse(quiz.getCreatedAt()));
   }
 }

@@ -1,7 +1,8 @@
 package com.ongodmatchu.domain.comment.dto;
 
 import com.ongodmatchu.domain.comment.entity.QuizComment;
-import java.time.LocalDateTime;
+import com.ongodmatchu.global.util.TimeFormat;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record CommentResponse(
@@ -10,8 +11,8 @@ public record CommentResponse(
     UUID authorPublicId,
     String authorNickname,
     String authorProfileImageUrl,
-    LocalDateTime createdAt,
-    LocalDateTime updatedAt) {
+    OffsetDateTime createdAt,
+    OffsetDateTime updatedAt) {
 
   public static CommentResponse from(QuizComment comment, String authorProfileImageUrl) {
     return new CommentResponse(
@@ -20,7 +21,7 @@ public record CommentResponse(
         comment.getUser().getPublicId(),
         comment.getUser().getNickname(),
         authorProfileImageUrl,
-        comment.getCreatedAt(),
-        comment.getUpdatedAt());
+        TimeFormat.toResponse(comment.getCreatedAt()),
+        TimeFormat.toResponse(comment.getUpdatedAt()));
   }
 }

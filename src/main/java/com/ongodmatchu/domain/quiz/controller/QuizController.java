@@ -66,8 +66,10 @@ public class QuizController {
   }
 
   @PostMapping("/{quizId}/play")
-  public ResponseEntity<ApiResponse<Void>> incrementPlayCount(@PathVariable Long quizId) {
-    quizService.incrementPlayCount(quizId);
+  public ResponseEntity<ApiResponse<Void>> incrementPlayCount(
+      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
+    quizService.incrementPlayCount(quizId, viewerId);
     return ResponseEntity.ok(ApiResponse.ok());
   }
 

@@ -95,7 +95,14 @@ public class S3Service {
             .sizeBytes(request.sizeBytes())
             .build());
 
-    return new PresignedUrlResponse(presigned.url().toString(), key, UPLOAD_URL_EXPIRY.toSeconds());
+    Map<String, String> requiredHeaders =
+        Map.of(
+            "Content-Type",
+            request.contentType(),
+            "x-amz-tagging",
+            UploadPolicy.PENDING_TAGGING_HEADER);
+    return new PresignedUrlResponse(
+        presigned.url().toString(), key, UPLOAD_URL_EXPIRY.toSeconds(), requiredHeaders);
   }
 
   public ViewUrlResponse generateViewUrl(String key) {
