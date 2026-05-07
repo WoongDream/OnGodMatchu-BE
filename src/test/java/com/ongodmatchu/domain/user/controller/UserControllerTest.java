@@ -14,7 +14,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
-import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizSort;
+import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
@@ -365,25 +367,27 @@ class UserControllerTest {
   @Test
   @DisplayName("getMyQuizzes_인증된유저_200_Page반환")
   void getMyQuizzes_authenticated_returns200WithPage() throws Exception {
-    QuizResponse quizResponse =
-        new QuizResponse(
-            1L,
+    MyQuizListItemResponse item =
+        new MyQuizListItemResponse(
             UUID.fromString("00000000-0000-0000-0000-000000000010"),
             "내 퀴즈",
-            "설명",
             "game",
+            "게임",
+            QuizVisibility.PRIVATE,
             null,
             null,
             5,
             0,
             0,
             0,
-            false,
-            QuizVisibility.PRIVATE,
-            "테스트유저",
+            null,
+            LocalDateTime.of(2024, 1, 1, 0, 0),
             LocalDateTime.of(2024, 1, 1, 0, 0));
-    Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));
-    given(quizService.getMyQuizList(eq(1L), any(Pageable.class))).willReturn(page);
+    Page<MyQuizListItemResponse> page = new PageImpl<>(List.of(item));
+    given(
+            quizService.getMyQuizList(
+                eq(1L), any(VisibilityFilter.class), any(QuizSort.class), any(Pageable.class)))
+        .willReturn(page);
 
     mockMvc
         .perform(get("/api/users/me/quizzes"))
@@ -392,13 +396,16 @@ class UserControllerTest {
         .andExpect(jsonPath("$.data.content").isArray())
         .andExpect(jsonPath("$.data.content[0].title").value("내 퀴즈"))
         .andExpect(jsonPath("$.data.content[0].category").value("game"))
+        .andExpect(jsonPath("$.data.content[0].categoryLabel").value("게임"))
         .andExpect(jsonPath("$.data.totalElements").value(1));
   }
 
   @Test
   @DisplayName("getMyQuizzes_퀴즈없음_빈페이지반환_200")
   void getMyQuizzes_noQuizzes_returnsEmptyPage() throws Exception {
-    given(quizService.getMyQuizList(eq(1L), any(Pageable.class)))
+    given(
+            quizService.getMyQuizList(
+                eq(1L), any(VisibilityFilter.class), any(QuizSort.class), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of()));
 
     mockMvc
@@ -415,25 +422,26 @@ class UserControllerTest {
   @DisplayName("getUserQuizzes_공개프로필_비로그인뷰어_200_정상목록반환")
   void getUserQuizzes_publicProfile_anonymousViewer_returns200() throws Exception {
     UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000003");
-    QuizResponse quizResponse =
-        new QuizResponse(
-            2L,
+    MyQuizListItemResponse item =
+        new MyQuizListItemResponse(
             UUID.fromString("00000000-0000-0000-0000-000000000011"),
             "공개 퀴즈",
-            "설명",
             "music",
+            "음악",
+            QuizVisibility.PUBLIC,
             null,
             null,
             10,
             0,
             0,
             0,
-            false,
-            QuizVisibility.PUBLIC,
-            "공개유저",
+            null,
+            LocalDateTime.of(2024, 6, 1, 0, 0),
             LocalDateTime.of(2024, 6, 1, 0, 0));
-    Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));
-    given(quizService.getQuizListByPublicId(eq(targetPublicId), eq(null), any(Pageable.class)))
+    Page<MyQuizListItemResponse> page = new PageImpl<>(List.of(item));
+    given(
+            quizService.getQuizListByPublicId(
+                eq(targetPublicId), eq(null), any(QuizSort.class), any(Pageable.class)))
         .willReturn(page);
 
     SecurityContextHolder.clearContext();
@@ -450,7 +458,9 @@ class UserControllerTest {
   @DisplayName("getUserQuizzes_비공개프로필_외부뷰어_200_빈페이지반환")
   void getUserQuizzes_privateProfile_externalViewer_returnsEmptyPage() throws Exception {
     UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000004");
-    given(quizService.getQuizListByPublicId(eq(targetPublicId), eq(1L), any(Pageable.class)))
+    given(
+            quizService.getQuizListByPublicId(
+                eq(targetPublicId), eq(1L), any(QuizSort.class), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of()));
 
     mockMvc
@@ -465,25 +475,26 @@ class UserControllerTest {
   @DisplayName("getUserQuizzes_로그인뷰어_viewerUserId전달_200반환")
   void getUserQuizzes_authenticatedViewer_passesViewerId() throws Exception {
     UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000005");
-    QuizResponse quizResponse =
-        new QuizResponse(
-            3L,
+    MyQuizListItemResponse item =
+        new MyQuizListItemResponse(
             UUID.fromString("00000000-0000-0000-0000-000000000012"),
             "타인퀴즈",
-            "설명",
             "etc",
+            "기타",
+            QuizVisibility.PUBLIC,
             null,
             null,
             3,
             0,
             0,
             0,
-            false,
-            QuizVisibility.PUBLIC,
-            "타인유저",
+            null,
+            LocalDateTime.of(2024, 3, 1, 0, 0),
             LocalDateTime.of(2024, 3, 1, 0, 0));
-    Page<QuizResponse> page = new PageImpl<>(List.of(quizResponse));
-    given(quizService.getQuizListByPublicId(eq(targetPublicId), eq(1L), any(Pageable.class)))
+    Page<MyQuizListItemResponse> page = new PageImpl<>(List.of(item));
+    given(
+            quizService.getQuizListByPublicId(
+                eq(targetPublicId), eq(1L), any(QuizSort.class), any(Pageable.class)))
         .willReturn(page);
 
     mockMvc

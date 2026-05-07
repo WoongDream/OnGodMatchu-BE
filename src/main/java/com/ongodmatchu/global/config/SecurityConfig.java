@@ -53,7 +53,11 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/upload/signed")
                     .permitAll()
-                    .requestMatchers(HttpMethod.GET, "/api/users/me", "/api/users/me/quizzes")
+                    .requestMatchers(
+                        HttpMethod.GET,
+                        "/api/users/me",
+                        "/api/users/me/quizzes",
+                        "/api/users/me/profile/stats")
                     .authenticated()
                     .requestMatchers(HttpMethod.GET, "/api/users/*", "/api/users/*/quizzes")
                     .permitAll()

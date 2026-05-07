@@ -1,10 +1,13 @@
 package com.ongodmatchu.domain.user.controller;
 
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
-import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizSort;
+import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
+import com.ongodmatchu.domain.user.dto.ProfileStatsResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.service.UserService;
@@ -16,7 +19,6 @@ import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,6 +29,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -101,22 +104,36 @@ public class UserController {
   }
 
   @GetMapping("/me/quizzes")
-  public ResponseEntity<ApiResponse<Page<QuizResponse>>> getMyQuizzes(
+  public ResponseEntity<ApiResponse<Page<MyQuizListItemResponse>>> getMyQuizzes(
       @AuthenticationPrincipal CustomUserDetails userDetails,
-      @PageableDefault(size = 12, sort = "createdAt", direction = Sort.Direction.DESC)
-          Pageable pageable) {
-    Page<QuizResponse> page = quizService.getMyQuizList(userDetails.getUser().getId(), pageable);
+      @RequestParam(required = false) String visibility,
+      @RequestParam(required = false) String sort,
+      @PageableDefault(size = 20) Pageable pageable) {
+    Page<MyQuizListItemResponse> page =
+        quizService.getMyQuizList(
+            userDetails.getUser().getId(),
+            VisibilityFilter.fromKey(visibility),
+            QuizSort.fromKey(sort),
+            pageable);
     return ResponseEntity.ok(ApiResponse.ok(page));
   }
 
+  @GetMapping("/me/profile/stats")
+  public ResponseEntity<ApiResponse<ProfileStatsResponse>> getMyProfileStats(
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    ProfileStatsResponse stats = quizService.getProfileStats(userDetails.getUser().getId());
+    return ResponseEntity.ok(ApiResponse.ok(stats));
+  }
+
   @GetMapping("/{publicId}/quizzes")
-  public ResponseEntity<ApiResponse<Page<QuizResponse>>> getUserQuizzes(
+  public ResponseEntity<ApiResponse<Page<MyQuizListItemResponse>>> getUserQuizzes(
       @PathVariable UUID publicId,
       @AuthenticationPrincipal CustomUserDetails userDetails,
-      @PageableDefault(size = 12, sort = "createdAt", direction = Sort.Direction.DESC)
-          Pageable pageable) {
+      @RequestParam(required = false) String sort,
+      @PageableDefault(size = 20) Pageable pageable) {
     Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
-    Page<QuizResponse> page = quizService.getQuizListByPublicId(publicId, viewerId, pageable);
+    Page<MyQuizListItemResponse> page =
+        quizService.getQuizListByPublicId(publicId, viewerId, QuizSort.fromKey(sort), pageable);
     return ResponseEntity.ok(ApiResponse.ok(page));
   }
 }

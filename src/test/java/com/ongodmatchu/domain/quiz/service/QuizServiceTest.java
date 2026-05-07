@@ -16,11 +16,14 @@ import static org.mockito.Mockito.times;
 import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
+import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizSort;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
+import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
@@ -504,32 +507,118 @@ class QuizServiceTest {
         .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
   }
 
+  // ============ getProfileStats ============
+
+  @Test
+  @DisplayName("getProfileStats_정상_aggregateRow매핑+weeklyPlay0")
+  void getProfileStats_returnsAggregatedRow() {
+    com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow row =
+        new com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow() {
+          @Override
+          public long getQuizCount() {
+            return 5L;
+          }
+
+          @Override
+          public long getPlays() {
+            return 100L;
+          }
+
+          @Override
+          public long getStars() {
+            return 30L;
+          }
+
+          @Override
+          public long getComments() {
+            return 12L;
+          }
+
+          @Override
+          public long getShares() {
+            return 7L;
+          }
+        };
+    given(quizRepository.aggregateByUserId(1L)).willReturn(row);
+
+    com.ongodmatchu.domain.user.dto.ProfileStatsResponse stats = quizService.getProfileStats(1L);
+
+    assertThat(stats.totalQuizCount()).isEqualTo(5L);
+    assertThat(stats.totalPlayCount()).isEqualTo(100L);
+    assertThat(stats.totalStarCount()).isEqualTo(30L);
+    assertThat(stats.totalCommentCount()).isEqualTo(12L);
+    assertThat(stats.totalShareCount()).isEqualTo(7L);
+    assertThat(stats.weeklyPlayCount()).isZero();
+  }
+
   // ============ getMyQuizList ============
 
   @Test
-  @DisplayName("getMyQuizList_본인퀴즈목록_페이지반환")
+  @DisplayName("getMyQuizList_본인퀴즈목록_ALL_LATEST_정상반환")
   void getMyQuizList_returnsPaginatedResults() {
     User user = testUser();
     Quiz quiz = testQuiz(user);
-    Pageable pageable = PageRequest.of(0, 12);
-    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+    given(quizRepository.findByUserId(eq(1L), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
 
-    Page<QuizResponse> result = quizService.getMyQuizList(1L, pageable);
+    Page<MyQuizListItemResponse> result =
+        quizService.getMyQuizList(1L, VisibilityFilter.ALL, QuizSort.LATEST, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).title()).isEqualTo("퀴즈 제목");
-    then(quizRepository).should().findByUserIdOrderByCreatedAtDesc(1L, pageable);
+    then(quizRepository).should().findByUserId(eq(1L), any(Pageable.class));
+  }
+
+  @Test
+  @DisplayName("getMyQuizList_PUBLIC필터_findByUserIdAndVisibility호출")
+  void getMyQuizList_publicFilter_callsVisibilityRepo() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(
+            quizRepository.findByUserIdAndVisibility(
+                eq(1L), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    Page<MyQuizListItemResponse> result =
+        quizService.getMyQuizList(
+            1L, VisibilityFilter.PUBLIC, QuizSort.LATEST, PageRequest.of(0, 12));
+
+    assertThat(result.getContent()).hasSize(1);
+    then(quizRepository)
+        .should()
+        .findByUserIdAndVisibility(eq(1L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
+    then(quizRepository).should(never()).findByUserId(anyLong(), any(Pageable.class));
+  }
+
+  @Test
+  @DisplayName("getMyQuizList_PRIVATE필터_findByUserIdAndVisibility호출")
+  void getMyQuizList_privateFilter_callsVisibilityRepo() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    quiz.changeVisibility(QuizVisibility.PRIVATE);
+    given(
+            quizRepository.findByUserIdAndVisibility(
+                eq(1L), eq(QuizVisibility.PRIVATE), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    Page<MyQuizListItemResponse> result =
+        quizService.getMyQuizList(
+            1L, VisibilityFilter.PRIVATE, QuizSort.LATEST, PageRequest.of(0, 12));
+
+    assertThat(result.getContent()).hasSize(1);
+    then(quizRepository)
+        .should()
+        .findByUserIdAndVisibility(eq(1L), eq(QuizVisibility.PRIVATE), any(Pageable.class));
   }
 
   @Test
   @DisplayName("getMyQuizList_퀴즈없음_빈페이지반환")
   void getMyQuizList_noQuizzes_returnsEmptyPage() {
-    Pageable pageable = PageRequest.of(0, 12);
-    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+    given(quizRepository.findByUserId(eq(1L), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of()));
 
-    Page<QuizResponse> result = quizService.getMyQuizList(1L, pageable);
+    Page<MyQuizListItemResponse> result =
+        quizService.getMyQuizList(1L, VisibilityFilter.ALL, QuizSort.LATEST, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).isEmpty();
     assertThat(result.getTotalElements()).isZero();
@@ -541,16 +630,30 @@ class QuizServiceTest {
     User user = testUser();
     Quiz quiz = testQuiz(user);
     ReflectionTestUtils.setField(quiz, "thumbnailKey", "quiz-images/uid/thumb.png");
-    Pageable pageable = PageRequest.of(0, 12);
-    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+    given(quizRepository.findByUserId(eq(1L), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
     given(s3Service.batchPresignViewUrls(List.of("quiz-images/uid/thumb.png")))
         .willReturn(Map.of("quiz-images/uid/thumb.png", "https://signed.example/thumb.png"));
 
-    Page<QuizResponse> result = quizService.getMyQuizList(1L, pageable);
+    Page<MyQuizListItemResponse> result =
+        quizService.getMyQuizList(1L, VisibilityFilter.ALL, QuizSort.LATEST, PageRequest.of(0, 12));
 
     assertThat(result.getContent().get(0).thumbnailUrl())
         .isEqualTo("https://signed.example/thumb.png");
+  }
+
+  @Test
+  @DisplayName("getMyQuizList_size50초과요청_50으로cap")
+  void getMyQuizList_pageSize_cappedAt50() {
+    given(quizRepository.findByUserId(eq(1L), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    quizService.getMyQuizList(1L, VisibilityFilter.ALL, QuizSort.LATEST, PageRequest.of(0, 200));
+
+    org.mockito.ArgumentCaptor<Pageable> captor =
+        org.mockito.ArgumentCaptor.forClass(Pageable.class);
+    then(quizRepository).should().findByUserId(eq(1L), captor.capture());
+    assertThat(captor.getValue().getPageSize()).isEqualTo(50);
   }
 
   // ============ getQuizListByPublicId ============
@@ -562,7 +665,9 @@ class QuizServiceTest {
     given(userRepository.findByPublicId(unknownId)).willReturn(Optional.empty());
 
     assertThatThrownBy(
-            () -> quizService.getQuizListByPublicId(unknownId, null, PageRequest.of(0, 12)))
+            () ->
+                quizService.getQuizListByPublicId(
+                    unknownId, null, QuizSort.LATEST, PageRequest.of(0, 12)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
@@ -574,20 +679,21 @@ class QuizServiceTest {
     User author = testUser();
     Quiz quiz = testQuiz(author);
     UUID authorPublicId = author.getPublicId();
-    Pageable pageable = PageRequest.of(0, 12);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
     given(
-            quizRepository.findByUserIdAndVisibilityOrderByCreatedAtDesc(
-                1L, QuizVisibility.PUBLIC, pageable))
+            quizRepository.findByUserIdAndVisibility(
+                eq(1L), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
 
-    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, null, pageable);
+    Page<MyQuizListItemResponse> result =
+        quizService.getQuizListByPublicId(
+            authorPublicId, null, QuizSort.LATEST, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).title()).isEqualTo("퀴즈 제목");
     then(quizRepository)
         .should()
-        .findByUserIdAndVisibilityOrderByCreatedAtDesc(1L, QuizVisibility.PUBLIC, pageable);
+        .findByUserIdAndVisibility(eq(1L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
   }
 
   @Test
@@ -596,20 +702,21 @@ class QuizServiceTest {
     User author = testUser();
     Quiz quiz = testQuiz(author);
     UUID authorPublicId = author.getPublicId();
-    Pageable pageable = PageRequest.of(0, 12);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
     given(
-            quizRepository.findByUserIdAndVisibilityOrderByCreatedAtDesc(
-                1L, QuizVisibility.PUBLIC, pageable))
+            quizRepository.findByUserIdAndVisibility(
+                eq(1L), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
 
-    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, 99L, pageable);
+    Page<MyQuizListItemResponse> result =
+        quizService.getQuizListByPublicId(
+            authorPublicId, 99L, QuizSort.LATEST, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).hasSize(1);
     then(quizRepository)
         .should()
-        .findByUserIdAndVisibilityOrderByCreatedAtDesc(1L, QuizVisibility.PUBLIC, pageable);
-    then(quizRepository).should(never()).findByUserIdOrderByCreatedAtDesc(anyLong(), any());
+        .findByUserIdAndVisibility(eq(1L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
+    then(quizRepository).should(never()).findByUserId(anyLong(), any(Pageable.class));
   }
 
   @Test
@@ -620,15 +727,16 @@ class QuizServiceTest {
     Quiz quiz = testQuiz(author);
     quiz.changeVisibility(QuizVisibility.PRIVATE);
     UUID authorPublicId = author.getPublicId();
-    Pageable pageable = PageRequest.of(0, 12);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizRepository.findByUserIdOrderByCreatedAtDesc(1L, pageable))
+    given(quizRepository.findByUserId(eq(1L), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
 
-    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, 1L, pageable);
+    Page<MyQuizListItemResponse> result =
+        quizService.getQuizListByPublicId(
+            authorPublicId, 1L, QuizSort.LATEST, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).hasSize(1);
-    then(quizRepository).should().findByUserIdOrderByCreatedAtDesc(1L, pageable);
+    then(quizRepository).should().findByUserId(eq(1L), any(Pageable.class));
   }
 
   @Test
@@ -637,16 +745,17 @@ class QuizServiceTest {
     User author = testUser();
     author.updateProfilePublic(false);
     UUID authorPublicId = author.getPublicId();
-    Pageable pageable = PageRequest.of(0, 12);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
 
-    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, 99L, pageable);
+    Page<MyQuizListItemResponse> result =
+        quizService.getQuizListByPublicId(
+            authorPublicId, 99L, QuizSort.LATEST, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).isEmpty();
-    then(quizRepository).should(never()).findByUserIdOrderByCreatedAtDesc(anyLong(), any());
+    then(quizRepository).should(never()).findByUserId(anyLong(), any(Pageable.class));
     then(quizRepository)
         .should(never())
-        .findByUserIdAndVisibilityOrderByCreatedAtDesc(anyLong(), any(), any());
+        .findByUserIdAndVisibility(anyLong(), any(), any(Pageable.class));
   }
 
   @Test
@@ -655,16 +764,17 @@ class QuizServiceTest {
     User author = testUser();
     author.updateProfilePublic(false);
     UUID authorPublicId = author.getPublicId();
-    Pageable pageable = PageRequest.of(0, 12);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
 
-    Page<QuizResponse> result = quizService.getQuizListByPublicId(authorPublicId, null, pageable);
+    Page<MyQuizListItemResponse> result =
+        quizService.getQuizListByPublicId(
+            authorPublicId, null, QuizSort.LATEST, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).isEmpty();
-    then(quizRepository).should(never()).findByUserIdOrderByCreatedAtDesc(anyLong(), any());
+    then(quizRepository).should(never()).findByUserId(anyLong(), any(Pageable.class));
     then(quizRepository)
         .should(never())
-        .findByUserIdAndVisibilityOrderByCreatedAtDesc(anyLong(), any(), any());
+        .findByUserIdAndVisibility(anyLong(), any(), any(Pageable.class));
   }
 
   // ============ updateQuiz ============

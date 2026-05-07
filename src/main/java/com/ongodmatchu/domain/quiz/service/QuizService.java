@@ -3,17 +3,22 @@ package com.ongodmatchu.domain.quiz.service;
 import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
+import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuestionResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizSort;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
+import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizCategory;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
+import com.ongodmatchu.domain.quiz.repository.QuizRepository.QuizAggregateRow;
 import com.ongodmatchu.domain.quiz.repository.QuizStarRepository;
+import com.ongodmatchu.domain.user.dto.ProfileStatsResponse;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
 import com.ongodmatchu.global.exception.BusinessException;
@@ -26,6 +31,7 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -174,39 +180,68 @@ public class QuizService {
     quiz.incrementShareCount();
   }
 
-  /** 본인의 퀴즈 목록. */
+  private static final int MAX_PAGE_SIZE = 50;
+  private static final int DEFAULT_PAGE_SIZE = 20;
+
+  /** 본인의 퀴즈 목록 — visibility 필터 + sort 옵션 + 페이지네이션 cap. */
   @Transactional(readOnly = true)
-  public Page<QuizResponse> getMyQuizList(Long userId, Pageable pageable) {
-    Page<Quiz> page = quizRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable);
-    return mapWithThumbnails(page);
+  public Page<MyQuizListItemResponse> getMyQuizList(
+      Long userId, VisibilityFilter visibility, QuizSort sort, Pageable pageable) {
+    Pageable effective = applyPageDefaults(pageable, sort);
+    Page<Quiz> page =
+        switch (visibility) {
+          case ALL -> quizRepository.findByUserId(userId, effective);
+          case PUBLIC ->
+              quizRepository.findByUserIdAndVisibility(userId, QuizVisibility.PUBLIC, effective);
+          case PRIVATE ->
+              quizRepository.findByUserIdAndVisibility(userId, QuizVisibility.PRIVATE, effective);
+        };
+    return mapToListItems(page);
   }
 
-  /** 타 유저의 퀴즈 목록. 비공개 프로필 + 외부 뷰어면 빈 페이지. 외부 뷰어는 PUBLIC 퀴즈만, 본인은 전체 노출. */
+  /** 타 유저의 퀴즈 목록. 비공개 프로필 + 외부 뷰어면 빈 페이지. 외부 뷰어는 PUBLIC 퀴즈만, 본인은 전체 노출. 응답 스키마는 본인 목록과 통일. */
   @Transactional(readOnly = true)
-  public Page<QuizResponse> getQuizListByPublicId(
-      UUID publicId, Long viewerUserId, Pageable pageable) {
+  public Page<MyQuizListItemResponse> getQuizListByPublicId(
+      UUID publicId, Long viewerUserId, QuizSort sort, Pageable pageable) {
     User author =
         userRepository
             .findByPublicId(publicId)
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
     boolean isOwner = viewerUserId != null && viewerUserId.equals(author.getId());
+    Pageable effective = applyPageDefaults(pageable, sort);
     if (!author.isProfilePublic() && !isOwner) {
-      return Page.empty(pageable);
+      return Page.empty(effective);
     }
     Page<Quiz> page =
         isOwner
-            ? quizRepository.findByUserIdOrderByCreatedAtDesc(author.getId(), pageable)
-            : quizRepository.findByUserIdAndVisibilityOrderByCreatedAtDesc(
-                author.getId(), QuizVisibility.PUBLIC, pageable);
-    return mapWithThumbnails(page);
+            ? quizRepository.findByUserId(author.getId(), effective)
+            : quizRepository.findByUserIdAndVisibility(
+                author.getId(), QuizVisibility.PUBLIC, effective);
+    return mapToListItems(page);
   }
 
-  private Page<QuizResponse> mapWithThumbnails(Page<Quiz> page) {
+  private Page<MyQuizListItemResponse> mapToListItems(Page<Quiz> page) {
     List<String> keys =
         page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
     Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
-    return page.map(q -> QuizResponse.from(q, lookupUrl(presigned, q.getThumbnailKey())));
+    return page.map(q -> MyQuizListItemResponse.from(q, lookupUrl(presigned, q.getThumbnailKey())));
+  }
+
+  /** 프로필 (내가 만든 퀴즈) 페이지 상단 통계. {@code weeklyPlayCount} 는 풀이 기록 묶음 머지 전까지 0 으로 반환. */
+  @Transactional(readOnly = true)
+  public ProfileStatsResponse getProfileStats(Long userId) {
+    QuizAggregateRow row = quizRepository.aggregateByUserId(userId);
+    return new ProfileStatsResponse(
+        row.getQuizCount(), row.getPlays(), row.getStars(), row.getComments(), row.getShares(), 0L);
+  }
+
+  private Pageable applyPageDefaults(Pageable pageable, QuizSort sort) {
+    int size = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
+    if (size <= 0) {
+      size = DEFAULT_PAGE_SIZE;
+    }
+    return PageRequest.of(pageable.getPageNumber(), size, sort.toSort());
   }
 
   @Transactional
