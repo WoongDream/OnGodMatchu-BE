@@ -339,6 +339,25 @@ class AuthServiceTest {
   }
 
   @Test
+  @DisplayName("로그인_시스템계정_USER_NOT_FOUND마스킹")
+  void login_systemAccount_throwsUserNotFound() {
+    User systemUser =
+        User.builder()
+            .email("admin@system.local")
+            .nickname("관리자")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(systemUser, "isSystem", true);
+    given(userRepository.findByEmail("admin@system.local")).willReturn(Optional.of(systemUser));
+
+    assertThatThrownBy(() -> authService.login(new LoginRequest("admin@system.local", "anything")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  @Test
   @DisplayName("로그인_잘못된비밀번호_예외발생")
   void login_invalidPassword_throwsException() {
     User user =

@@ -27,6 +27,10 @@ class CustomUserDetailsServiceTest {
   @Mock private UserRepository userRepository;
 
   private User buildUser(boolean active) {
+    return buildUser(active, false);
+  }
+
+  private User buildUser(boolean active, boolean system) {
     User user =
         User.builder()
             .email("user@example.com")
@@ -38,6 +42,7 @@ class CustomUserDetailsServiceTest {
     ReflectionTestUtils.setField(user, "id", 1L);
     ReflectionTestUtils.setField(user, "publicId", UUID.randomUUID());
     ReflectionTestUtils.setField(user, "isActive", active);
+    ReflectionTestUtils.setField(user, "isSystem", system);
     return user;
   }
 
@@ -96,5 +101,29 @@ class CustomUserDetailsServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("loadUserByUsername_시스템계정_UNAUTHORIZED예외")
+  void loadUserByUsername_systemAccount_throwsUnauthorized() {
+    User systemUser = buildUser(true, true);
+    given(userRepository.findByEmail("user@example.com")).willReturn(Optional.of(systemUser));
+
+    assertThatThrownBy(() -> customUserDetailsService.loadUserByUsername("user@example.com"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.UNAUTHORIZED);
+  }
+
+  @Test
+  @DisplayName("loadUserById_시스템계정_UNAUTHORIZED예외")
+  void loadUserById_systemAccount_throwsUnauthorized() {
+    User systemUser = buildUser(true, true);
+    given(userRepository.findById(1L)).willReturn(Optional.of(systemUser));
+
+    assertThatThrownBy(() -> customUserDetailsService.loadUserById(1L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.UNAUTHORIZED);
   }
 }

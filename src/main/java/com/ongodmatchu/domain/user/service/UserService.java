@@ -2,14 +2,19 @@ package com.ongodmatchu.domain.user.service;
 
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
+import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
+import com.ongodmatchu.domain.user.entity.AdminAccount;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
+import com.ongodmatchu.domain.user.entity.WithdrawalReason;
+import com.ongodmatchu.domain.user.entity.WithdrawalReasonRecord;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.repository.WithdrawalReasonRepository;
 import com.ongodmatchu.domain.user.validation.BioPolicy;
 import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
 import com.ongodmatchu.domain.user.validation.NicknamePolicy;
@@ -33,6 +38,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class UserService {
 
+  static final String WITHDRAWAL_CONFIRMATION_PHRASE = "탈퇴하겠습니다.";
+
   private final UserRepository userRepository;
   private final NicknameNormalizer nicknameNormalizer;
   private final NicknamePolicy nicknamePolicy;
@@ -42,6 +49,8 @@ public class UserService {
   private final RefreshTokenRepository refreshTokenRepository;
   private final S3Service s3Service;
   private final ProfileImageGenerator profileImageGenerator;
+  private final QuizService quizService;
+  private final WithdrawalReasonRepository withdrawalReasonRepository;
 
   @Value("${app.profile.default-image-url}")
   private String defaultProfileImageUrl;
@@ -162,20 +171,45 @@ public class UserService {
   }
 
   /**
-   * 회원탈퇴 — soft delete. LOCAL 은 현재 비밀번호 재확인, OAuth 는 생략. UNIQUE 충돌 회피를 위해 email/nickname 을 publicId
-   * 기반 익명화 값으로 치환하고 isActive=false / deletedAt 을 기록한다. RT 전체 무효화 + 프로필 이미지 best-effort 삭제.
+   * 회원탈퇴 — soft delete + 본인 퀴즈 처리(이전/삭제) + 탈퇴 이유 기록.
+   *
+   * <ol>
+   *   <li>모달 "탈퇴하겠습니다." 문구 일치 검증 → 미일치 시 {@link ErrorCode#INVALID_WITHDRAWAL_CONFIRMATION}
+   *   <li>LOCAL 은 currentPassword 재확인, OAuth 는 생략
+   *   <li>{@code deleteOwnQuizzes=true} 면 본인 퀴즈+연관 데이터 일괄 삭제 / {@code false}(default) 면 시스템 관리자
+   *       계정으로 작성자 일괄 이전
+   *   <li>탈퇴 이유 익명 통계 저장 (reason!=null 시)
+   *   <li>email/nickname 익명화 + isActive=false + deletedAt 기록 + RT 전체 무효화 + 프로필 이미지 best-effort 삭제
+   * </ol>
    */
   @Transactional
   public void withdraw(Long userId, WithdrawRequest request) {
     User user = findUserById(userId);
+
+    String confirmation = request == null ? null : request.confirmationPhrase();
+    if (!WITHDRAWAL_CONFIRMATION_PHRASE.equals(confirmation)) {
+      throw new BusinessException(ErrorCode.INVALID_WITHDRAWAL_CONFIRMATION);
+    }
     if (user.getProvider() == AuthProvider.LOCAL) {
-      String currentPassword = request == null ? null : request.currentPassword();
+      String currentPassword = request.currentPassword();
       if (currentPassword == null
           || user.getPassword() == null
           || !passwordEncoder.matches(currentPassword, user.getPassword())) {
         throw new BusinessException(ErrorCode.WITHDRAWAL_PASSWORD_MISMATCH);
       }
     }
+
+    if (request.shouldDeleteOwnQuizzes()) {
+      quizService.deleteAllByUserId(userId);
+    } else {
+      User admin =
+          userRepository
+              .findByPublicId(AdminAccount.PUBLIC_ID)
+              .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+      quizService.transferOwnershipToAdmin(userId, admin.getId());
+    }
+
+    saveWithdrawalReason(request.reason(), request.reasonText());
 
     String anonymizedKey = "deleted_" + user.getPublicId();
     String previousImageKey = user.getProfileImageKey();
@@ -185,6 +219,18 @@ public class UserService {
     if (previousImageKey != null) {
       s3Service.deleteQuietly(previousImageKey);
     }
+  }
+
+  private void saveWithdrawalReason(WithdrawalReason reason, String reasonText) {
+    if (reason == null) {
+      return;
+    }
+    String trimmedText = reasonText == null ? null : reasonText.trim();
+    if (trimmedText != null && trimmedText.isEmpty()) {
+      trimmedText = null;
+    }
+    withdrawalReasonRepository.save(
+        WithdrawalReasonRecord.builder().reasonCode(reason.name()).reasonText(trimmedText).build());
   }
 
   @Transactional

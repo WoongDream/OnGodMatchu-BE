@@ -149,10 +149,15 @@ public class AuthService {
             .findByEmail(request.email())
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
+    if (user.isSystem()) {
+      // 시스템 계정은 로그인 차단 — 존재 자체를 노출하지 않도록 USER_NOT_FOUND 로 매핑.
+      throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+    }
     if (user.getProvider() != AuthProvider.LOCAL) {
       throw new BusinessException(ErrorCode.SOCIAL_USER_PASSWORD_LOGIN);
     }
-    if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+    if (user.getPassword() == null
+        || !passwordEncoder.matches(request.password(), user.getPassword())) {
       throw new BusinessException(ErrorCode.INVALID_PASSWORD);
     }
     if (!user.isEmailVerified()) {

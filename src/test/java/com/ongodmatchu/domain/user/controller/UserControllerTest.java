@@ -277,7 +277,7 @@ class UserControllerTest {
   @Test
   @DisplayName("withdraw_LOCAL_정상_200반환")
   void withdraw_local_returns200() throws Exception {
-    WithdrawRequest request = new WithdrawRequest("currentPass");
+    WithdrawRequest request = new WithdrawRequest("currentPass", "탈퇴하겠습니다.", false, null, null);
     willDoNothing().given(userService).withdraw(eq(1L), any(WithdrawRequest.class));
 
     mockMvc
@@ -290,11 +290,17 @@ class UserControllerTest {
   }
 
   @Test
-  @DisplayName("withdraw_OAuth_body없음_200반환")
-  void withdraw_oauth_noBody_returns200() throws Exception {
-    willDoNothing().given(userService).withdraw(eq(1L), any());
+  @DisplayName("withdraw_OAuth_body_확인문구만_200반환")
+  void withdraw_oauth_phraseOnly_returns200() throws Exception {
+    WithdrawRequest request = new WithdrawRequest(null, "탈퇴하겠습니다.", true, null, null);
+    willDoNothing().given(userService).withdraw(eq(1L), any(WithdrawRequest.class));
 
-    mockMvc.perform(delete("/api/users/me")).andExpect(status().isOk());
+    mockMvc
+        .perform(
+            delete("/api/users/me")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+        .andExpect(status().isOk());
   }
 
   // ============ POST /api/users/me/profile-image ============

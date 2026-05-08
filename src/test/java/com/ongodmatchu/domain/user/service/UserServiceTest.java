@@ -13,14 +13,19 @@ import static org.mockito.Mockito.never;
 
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
+import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
+import com.ongodmatchu.domain.user.entity.AdminAccount;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
+import com.ongodmatchu.domain.user.entity.WithdrawalReason;
+import com.ongodmatchu.domain.user.entity.WithdrawalReasonRecord;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import com.ongodmatchu.domain.user.repository.WithdrawalReasonRepository;
 import com.ongodmatchu.domain.user.validation.BioPolicy;
 import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
 import com.ongodmatchu.domain.user.validation.NicknamePolicy;
@@ -59,6 +64,8 @@ class UserServiceTest {
   @Mock private RefreshTokenRepository refreshTokenRepository;
   @Mock private S3Service s3Service;
   @Mock private ProfileImageGenerator profileImageGenerator;
+  @Mock private QuizService quizService;
+  @Mock private WithdrawalReasonRepository withdrawalReasonRepository;
 
   private static final String DEFAULT_IMAGE_URL = "https://cdn.example.com/default.png";
   private static final String VIEW_URL = "https://cdn.example.com/presigned-view-url";
@@ -633,16 +640,38 @@ class UserServiceTest {
 
   // ============ withdraw ============
 
+  private static final String PHRASE = "탈퇴하겠습니다.";
+
+  private User buildAdmin() {
+    User admin =
+        User.builder()
+            .email("admin@system.local")
+            .nickname("관리자")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(admin, "id", 999L);
+    ReflectionTestUtils.setField(admin, "publicId", AdminAccount.PUBLIC_ID);
+    ReflectionTestUtils.setField(admin, "isSystem", true);
+    return admin;
+  }
+
+  private WithdrawRequest req(String password, String phrase, Boolean deleteOwn) {
+    return new WithdrawRequest(password, phrase, deleteOwn, null, null);
+  }
+
   @Test
-  @DisplayName("withdraw_LOCAL_정상_익명화_isActive_false_RT삭제_프로필이미지삭제")
-  void withdraw_local_success_anonymizesAndCleansUp() {
+  @DisplayName("withdraw_LOCAL_정상_관리자이전_익명화_RT삭제_프로필이미지삭제")
+  void withdraw_local_success_transfersOwnershipAndAnonymizes() {
     User user = buildLocalUser(1L, "유저");
     UUID publicId = user.getPublicId();
     user.updateProfileImageKey("profile-images/uuid/photo.jpg");
+    User admin = buildAdmin();
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
     given(passwordEncoder.matches("currentPass", "hashed")).willReturn(true);
 
-    userService.withdraw(1L, new WithdrawRequest("currentPass"));
+    userService.withdraw(1L, req("currentPass", PHRASE, false));
 
     assertThat(user.isActive()).isFalse();
     assertThat(user.getDeletedAt()).isNotNull();
@@ -651,63 +680,87 @@ class UserServiceTest {
     assertThat(user.getPassword()).isNull();
     assertThat(user.getProfileImageKey()).isNull();
     assertThat(user.isProfilePublic()).isFalse();
+    then(quizService).should().transferOwnershipToAdmin(1L, 999L);
+    then(quizService).should(never()).deleteAllByUserId(any());
     then(refreshTokenRepository).should().deleteByUserId(1L);
     then(s3Service).should().deleteQuietly("profile-images/uuid/photo.jpg");
   }
 
   @Test
-  @DisplayName("withdraw_LOCAL_비밀번호미일치_WITHDRAWAL_PASSWORD_MISMATCH예외")
-  void withdraw_local_wrongPassword_throwsException() {
+  @DisplayName("withdraw_LOCAL_deleteOwnQuizzes_true_본인퀴즈일괄삭제_관리자이전없음")
+  void withdraw_local_deleteOwnQuizzes_callsDeleteAll() {
     User user = buildLocalUser(1L, "유저");
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
-    given(passwordEncoder.matches("wrong", "hashed")).willReturn(false);
+    given(passwordEncoder.matches("currentPass", "hashed")).willReturn(true);
 
-    assertThatThrownBy(() -> userService.withdraw(1L, new WithdrawRequest("wrong")))
+    userService.withdraw(1L, req("currentPass", PHRASE, true));
+
+    then(quizService).should().deleteAllByUserId(1L);
+    then(quizService).should(never()).transferOwnershipToAdmin(any(), any());
+    then(userRepository).should(never()).findByPublicId(any());
+  }
+
+  @Test
+  @DisplayName("withdraw_확인문구_미일치_INVALID_WITHDRAWAL_CONFIRMATION예외")
+  void withdraw_wrongConfirmationPhrase_throwsException() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    assertThatThrownBy(() -> userService.withdraw(1L, req("currentPass", "탈퇴할게요", false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.WITHDRAWAL_PASSWORD_MISMATCH);
+        .isEqualTo(ErrorCode.INVALID_WITHDRAWAL_CONFIRMATION);
 
     assertThat(user.isActive()).isTrue();
-    then(refreshTokenRepository).should(never()).deleteByUserId(any());
-    then(s3Service).should(never()).deleteQuietly(anyString());
+    then(passwordEncoder).should(never()).matches(anyString(), anyString());
+    then(quizService).shouldHaveNoInteractions();
   }
 
   @Test
-  @DisplayName("withdraw_LOCAL_currentPassword_null_WITHDRAWAL_PASSWORD_MISMATCH예외")
-  void withdraw_local_nullPassword_throwsException() {
-    User user = buildLocalUser(1L, "유저");
-    given(userRepository.findById(1L)).willReturn(Optional.of(user));
-
-    assertThatThrownBy(() -> userService.withdraw(1L, new WithdrawRequest(null)))
-        .isInstanceOf(BusinessException.class)
-        .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.WITHDRAWAL_PASSWORD_MISMATCH);
-  }
-
-  @Test
-  @DisplayName("withdraw_LOCAL_request_null_WITHDRAWAL_PASSWORD_MISMATCH예외")
-  void withdraw_local_nullRequest_throwsException() {
+  @DisplayName("withdraw_request_null_INVALID_WITHDRAWAL_CONFIRMATION예외")
+  void withdraw_nullRequest_throwsConfirmation() {
     User user = buildLocalUser(1L, "유저");
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
 
     assertThatThrownBy(() -> userService.withdraw(1L, null))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.WITHDRAWAL_PASSWORD_MISMATCH);
+        .isEqualTo(ErrorCode.INVALID_WITHDRAWAL_CONFIRMATION);
   }
 
   @Test
-  @DisplayName("withdraw_OAuth_비밀번호검증스킵_request_null도정상처리")
+  @DisplayName("withdraw_LOCAL_비밀번호미일치_WITHDRAWAL_PASSWORD_MISMATCH예외_확인문구통과후")
+  void withdraw_local_wrongPassword_throwsException() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(passwordEncoder.matches("wrong", "hashed")).willReturn(false);
+
+    assertThatThrownBy(() -> userService.withdraw(1L, req("wrong", PHRASE, false)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.WITHDRAWAL_PASSWORD_MISMATCH);
+
+    assertThat(user.isActive()).isTrue();
+    then(quizService).shouldHaveNoInteractions();
+    then(refreshTokenRepository).should(never()).deleteByUserId(any());
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("withdraw_OAuth_비밀번호검증스킵_확인문구만일치하면정상")
   void withdraw_oauth_skipsPasswordCheck() {
     User user = buildOAuthUser(1L, "소셜유저");
     UUID publicId = user.getPublicId();
+    User admin = buildAdmin();
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
 
-    userService.withdraw(1L, null);
+    userService.withdraw(1L, req(null, PHRASE, false));
 
     assertThat(user.isActive()).isFalse();
     assertThat(user.getNickname()).isEqualTo("deleted_" + publicId);
     then(passwordEncoder).should(never()).matches(anyString(), anyString());
+    then(quizService).should().transferOwnershipToAdmin(1L, 999L);
     then(refreshTokenRepository).should().deleteByUserId(1L);
   }
 
@@ -715,9 +768,11 @@ class UserServiceTest {
   @DisplayName("withdraw_프로필이미지없음_S3_deleteQuietly_미호출")
   void withdraw_noProfileImage_skipsS3Delete() {
     User user = buildOAuthUser(1L, "소셜유저");
+    User admin = buildAdmin();
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
 
-    userService.withdraw(1L, null);
+    userService.withdraw(1L, req(null, PHRASE, false));
 
     then(s3Service).should(never()).deleteQuietly(anyString());
   }
@@ -727,10 +782,58 @@ class UserServiceTest {
   void withdraw_userNotFound_throwsException() {
     given(userRepository.findById(99L)).willReturn(Optional.empty());
 
-    assertThatThrownBy(() -> userService.withdraw(99L, new WithdrawRequest("any")))
+    assertThatThrownBy(() -> userService.withdraw(99L, req("any", PHRASE, false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("withdraw_관리자계정시드없음_USER_NOT_FOUND예외")
+  void withdraw_adminMissing_throwsUserNotFound() {
+    User user = buildOAuthUser(1L, "소셜유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> userService.withdraw(1L, req(null, PHRASE, false)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+    assertThat(user.isActive()).isTrue();
+    then(refreshTokenRepository).should(never()).deleteByUserId(any());
+  }
+
+  @Test
+  @DisplayName("withdraw_탈퇴이유_있음_익명저장됨")
+  void withdraw_withReason_savesRecord() {
+    User user = buildOAuthUser(1L, "소셜유저");
+    User admin = buildAdmin();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
+
+    WithdrawRequest request =
+        new WithdrawRequest(null, PHRASE, false, WithdrawalReason.PRIVACY, "  민감한 정보  ");
+    userService.withdraw(1L, request);
+
+    org.mockito.ArgumentCaptor<WithdrawalReasonRecord> captor =
+        org.mockito.ArgumentCaptor.forClass(WithdrawalReasonRecord.class);
+    then(withdrawalReasonRepository).should().save(captor.capture());
+    assertThat(captor.getValue().getReasonCode()).isEqualTo("PRIVACY");
+    assertThat(captor.getValue().getReasonText()).isEqualTo("민감한 정보");
+  }
+
+  @Test
+  @DisplayName("withdraw_탈퇴이유_없음_저장되지않음")
+  void withdraw_noReason_skipsSave() {
+    User user = buildOAuthUser(1L, "소셜유저");
+    User admin = buildAdmin();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
+
+    userService.withdraw(1L, req(null, PHRASE, false));
+
+    then(withdrawalReasonRepository).shouldHaveNoInteractions();
   }
 
   // ============ calcActiveDays (private, getMe를 통해 간접 테스트) ============

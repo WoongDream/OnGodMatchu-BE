@@ -60,6 +60,10 @@ public class User extends BaseTimeEntity {
   @Column(nullable = false)
   private boolean isActive = true;
 
+  /** 시스템(관리자) 계정 표시 — 탈퇴 사용자의 퀴즈 작성자 이전 대상. 인증/로그인 차단 대상이기도 함. */
+  @Column(nullable = false)
+  private boolean isSystem = false;
+
   private LocalDateTime deletedAt;
 
   @Builder
