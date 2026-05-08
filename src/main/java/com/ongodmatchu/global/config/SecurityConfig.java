@@ -60,14 +60,20 @@ public class SecurityConfig {
                         HttpMethod.GET,
                         "/api/users/me",
                         "/api/users/me/quizzes",
-                        "/api/users/me/profile/stats")
+                        "/api/users/me/profile/stats",
+                        "/api/users/me/attempts")
                     .authenticated()
-                    .requestMatchers(HttpMethod.GET, "/api/users/*", "/api/users/*/quizzes")
+                    .requestMatchers(
+                        HttpMethod.GET,
+                        "/api/users/*",
+                        "/api/users/*/quizzes",
+                        "/api/users/*/attempts")
                     .permitAll()
                     .requestMatchers(
                         HttpMethod.POST,
                         "/api/quizzes/*/play",
                         "/api/quizzes/*/share",
+                        "/api/quizzes/*/attempts",
                         "/api/quizzes/grade")
                     .permitAll()
                     .anyRequest()

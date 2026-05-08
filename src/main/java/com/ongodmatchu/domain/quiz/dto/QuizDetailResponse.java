@@ -21,13 +21,18 @@ public record QuizDetailResponse(
     int commentCount,
     int shareCount,
     @Schema(description = "현재 사용자가 좋아요(스타) 눌렀는지. 비로그인 = null", nullable = true) Boolean isStarred,
+    @Schema(description = "평균 정답률 (0~100). 풀이 기록 0회면 null", nullable = true) Double correctRate,
     QuizVisibility visibility,
     String authorNickname,
     @Schema(description = "생성 시각 (ISO 8601 +09:00)") OffsetDateTime createdAt,
     List<QuestionResponse> questions) {
 
   public static QuizDetailResponse of(
-      Quiz quiz, String thumbnailUrl, Boolean isStarred, List<QuestionResponse> questions) {
+      Quiz quiz,
+      String thumbnailUrl,
+      Boolean isStarred,
+      Double correctRate,
+      List<QuestionResponse> questions) {
     return new QuizDetailResponse(
         quiz.getId(),
         quiz.getPublicId(),
@@ -41,6 +46,7 @@ public record QuizDetailResponse(
         quiz.getCommentCount(),
         quiz.getShareCount(),
         isStarred,
+        correctRate,
         quiz.getVisibility(),
         quiz.getUser().getNickname(),
         TimeFormat.toResponse(quiz.getCreatedAt()),
@@ -48,7 +54,12 @@ public record QuizDetailResponse(
   }
 
   public static QuizDetailResponse of(
+      Quiz quiz, String thumbnailUrl, Boolean isStarred, List<QuestionResponse> questions) {
+    return of(quiz, thumbnailUrl, isStarred, null, questions);
+  }
+
+  public static QuizDetailResponse of(
       Quiz quiz, String thumbnailUrl, List<QuestionResponse> questions) {
-    return of(quiz, thumbnailUrl, null, questions);
+    return of(quiz, thumbnailUrl, null, null, questions);
   }
 }

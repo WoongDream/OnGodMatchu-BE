@@ -86,6 +86,7 @@ class QuizControllerTest {
             0,
             0,
             false,
+            null,
             QuizVisibility.PUBLIC,
             "퀴즈작성자",
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
@@ -116,6 +117,7 @@ class QuizControllerTest {
             0,
             0,
             false,
+            null,
             QuizVisibility.PUBLIC,
             "퀴즈작성자",
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));

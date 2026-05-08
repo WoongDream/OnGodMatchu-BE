@@ -21,15 +21,21 @@ public record QuizResponse(
     int shareCount,
     @Schema(description = "현재 사용자가 좋아요(스타) 눌렀는지. 비로그인 = null (모름)", nullable = true)
         Boolean isStarred,
+    @Schema(description = "평균 정답률 (0~100). 풀이 기록 0회면 null", nullable = true) Double correctRate,
     QuizVisibility visibility,
     String authorNickname,
     @Schema(description = "생성 시각 (ISO 8601 +09:00)") OffsetDateTime createdAt) {
 
   public static QuizResponse from(Quiz quiz, String thumbnailUrl) {
-    return from(quiz, thumbnailUrl, null);
+    return from(quiz, thumbnailUrl, null, null);
   }
 
   public static QuizResponse from(Quiz quiz, String thumbnailUrl, Boolean isStarred) {
+    return from(quiz, thumbnailUrl, isStarred, null);
+  }
+
+  public static QuizResponse from(
+      Quiz quiz, String thumbnailUrl, Boolean isStarred, Double correctRate) {
     return new QuizResponse(
         quiz.getId(),
         quiz.getPublicId(),
@@ -43,6 +49,7 @@ public record QuizResponse(
         quiz.getCommentCount(),
         quiz.getShareCount(),
         isStarred,
+        correctRate,
         quiz.getVisibility(),
         quiz.getUser().getNickname(),
         TimeFormat.toResponse(quiz.getCreatedAt()));
