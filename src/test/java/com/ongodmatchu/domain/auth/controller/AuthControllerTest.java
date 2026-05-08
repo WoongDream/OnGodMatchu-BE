@@ -104,7 +104,7 @@ class AuthControllerTest {
                 "u@example.com",
                 "https://cdn.example.com/default.png",
                 null,
-                java.time.LocalDateTime.now(),
+                java.time.OffsetDateTime.now(),
                 0L,
                 true,
                 "LOCAL"),

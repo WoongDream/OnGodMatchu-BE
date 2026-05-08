@@ -1,7 +1,8 @@
 package com.ongodmatchu.domain.user.dto;
 
 import com.ongodmatchu.domain.user.entity.User;
-import java.time.LocalDateTime;
+import com.ongodmatchu.global.util.TimeFormat;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 public record UserResponse(
@@ -10,7 +11,7 @@ public record UserResponse(
     String email,
     String profileImageUrl,
     String bio,
-    LocalDateTime createdAt,
+    OffsetDateTime createdAt,
     long activeDays,
     boolean isProfilePublic,
     String provider) {
@@ -22,7 +23,7 @@ public record UserResponse(
         user.getEmail(),
         profileImageUrl,
         user.getBio(),
-        user.getCreatedAt(),
+        TimeFormat.toResponse(user.getCreatedAt()),
         activeDays,
         user.isProfilePublic(),
         user.getProvider().name());

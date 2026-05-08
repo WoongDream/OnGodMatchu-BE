@@ -10,6 +10,7 @@ public enum ErrorCode {
 
   // Common
   INVALID_INPUT(HttpStatus.BAD_REQUEST, "INVALID_INPUT", "입력값이 올바르지 않습니다."),
+  UNAUTHORIZED(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다."),
 
   // User
   USER_NOT_FOUND(HttpStatus.NOT_FOUND, "USER_NOT_FOUND", "사용자를 찾을 수 없습니다."),
@@ -48,6 +49,11 @@ public enum ErrorCode {
 
   // Question
   QUESTION_NOT_FOUND(HttpStatus.NOT_FOUND, "QUESTION_NOT_FOUND", "문제를 찾을 수 없습니다."),
+
+  // Comment
+  COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "COMMENT_NOT_FOUND", "댓글을 찾을 수 없습니다."),
+  COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN, "COMMENT_FORBIDDEN", "해당 댓글에 대한 권한이 없습니다."),
+  INVALID_COMMENT_FORMAT(HttpStatus.BAD_REQUEST, "INVALID_COMMENT_FORMAT", "댓글 형식이 올바르지 않습니다."),
 
   // Upload
   INVALID_FILE_TYPE(HttpStatus.BAD_REQUEST, "INVALID_FILE_TYPE", "지원하지 않는 파일 타입입니다."),

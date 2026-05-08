@@ -84,6 +84,9 @@ class S3ServiceTest {
     assertThat(response.key()).startsWith("quiz-images/" + USER_PUBLIC_ID + "/");
     assertThat(response.key()).endsWith(".jpg");
     assertThat(response.expiresIn()).isEqualTo(600L);
+    assertThat(response.requiredHeaders())
+        .containsEntry("Content-Type", "image/jpeg")
+        .containsEntry("x-amz-tagging", "status=pending");
     ArgumentCaptor<UploadMeta> captor = ArgumentCaptor.forClass(UploadMeta.class);
     then(uploadMetaRepository).should().save(captor.capture());
     assertThat(captor.getValue().getStatus()).isEqualTo(UploadStatus.PENDING);

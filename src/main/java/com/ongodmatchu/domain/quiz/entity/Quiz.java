@@ -4,6 +4,8 @@ import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -12,11 +14,13 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.LastModifiedDate;
 
 @Entity
 @Table(name = "quizzes")
@@ -48,14 +52,41 @@ public class Quiz extends BaseTimeEntity {
   @Column(nullable = false)
   private int playCount;
 
+  @Column(nullable = false)
+  private int starCount;
+
+  @Column(nullable = false)
+  private int commentCount;
+
+  @Column(nullable = false)
+  private int shareCount;
+
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 10)
+  private QuizVisibility visibility;
+
+  @LastModifiedDate
+  @Column(name = "updated_at", nullable = false)
+  private LocalDateTime updatedAt;
+
   @Builder
-  private Quiz(User user, String title, String description, String category, String thumbnailKey) {
+  private Quiz(
+      User user,
+      String title,
+      String description,
+      String category,
+      String thumbnailKey,
+      QuizVisibility visibility) {
     this.user = user;
     this.title = title;
     this.description = description;
     this.category = category;
     this.thumbnailKey = thumbnailKey;
     this.playCount = 0;
+    this.starCount = 0;
+    this.commentCount = 0;
+    this.shareCount = 0;
+    this.visibility = visibility != null ? visibility : QuizVisibility.PRIVATE;
   }
 
   @PrePersist
@@ -83,5 +114,29 @@ public class Quiz extends BaseTimeEntity {
 
   public void updateThumbnailKey(String thumbnailKey) {
     this.thumbnailKey = thumbnailKey;
+  }
+
+  public void changeVisibility(QuizVisibility visibility) {
+    this.visibility = visibility;
+  }
+
+  public void incrementStarCount() {
+    this.starCount++;
+  }
+
+  public void decrementStarCount() {
+    if (this.starCount > 0) this.starCount--;
+  }
+
+  public void incrementCommentCount() {
+    this.commentCount++;
+  }
+
+  public void decrementCommentCount() {
+    if (this.commentCount > 0) this.commentCount--;
+  }
+
+  public void incrementShareCount() {
+    this.shareCount++;
   }
 }
