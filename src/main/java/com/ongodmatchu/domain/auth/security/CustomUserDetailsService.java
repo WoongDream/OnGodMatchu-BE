@@ -24,6 +24,7 @@ public class CustomUserDetailsService implements UserDetailsService {
         userRepository
             .findByEmail(email)
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    ensureActive(user);
     return new CustomUserDetails(user);
   }
 
@@ -33,6 +34,14 @@ public class CustomUserDetailsService implements UserDetailsService {
         userRepository
             .findById(id)
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    ensureActive(user);
     return new CustomUserDetails(user);
+  }
+
+  /** 탈퇴 처리된 유저는 인증 단계에서 차단 — 토큰이 살아있어도 401 로 응답되도록. */
+  private void ensureActive(User user) {
+    if (!user.isActive()) {
+      throw new BusinessException(ErrorCode.UNAUTHORIZED);
+    }
   }
 }

@@ -30,6 +30,8 @@ public enum ErrorCode {
   OAUTH_USER_NO_PASSWORD(
       HttpStatus.BAD_REQUEST, "OAUTH_USER_NO_PASSWORD", "소셜 로그인 계정은 비밀번호 변경을 사용할 수 없습니다."),
   INVALID_BIO_FORMAT(HttpStatus.BAD_REQUEST, "INVALID_BIO_FORMAT", "한 줄 소개 형식이 올바르지 않습니다."),
+  WITHDRAWAL_PASSWORD_MISMATCH(
+      HttpStatus.UNAUTHORIZED, "WITHDRAWAL_PASSWORD_MISMATCH", "현재 비밀번호가 올바르지 않습니다."),
 
   // Email verification
   INVALID_VERIFICATION_CODE(

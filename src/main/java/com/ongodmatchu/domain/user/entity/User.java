@@ -57,6 +57,11 @@ public class User extends BaseTimeEntity {
 
   private LocalDateTime lastActiveAt;
 
+  @Column(nullable = false)
+  private boolean isActive = true;
+
+  private LocalDateTime deletedAt;
+
   @Builder
   private User(
       String email,
@@ -72,6 +77,7 @@ public class User extends BaseTimeEntity {
     this.providerId = providerId;
     this.emailVerified = emailVerified;
     this.isProfilePublic = true;
+    this.isActive = true;
   }
 
   @PrePersist
@@ -111,5 +117,16 @@ public class User extends BaseTimeEntity {
 
   public void touchLastActiveAt() {
     this.lastActiveAt = LocalDateTime.now();
+  }
+
+  public void withdraw(String anonymizedEmail, String anonymizedNickname) {
+    this.email = anonymizedEmail;
+    this.nickname = anonymizedNickname;
+    this.password = null;
+    this.bio = null;
+    this.profileImageKey = null;
+    this.isProfilePublic = false;
+    this.isActive = false;
+    this.deletedAt = LocalDateTime.now();
   }
 }

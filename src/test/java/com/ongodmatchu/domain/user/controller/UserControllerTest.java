@@ -26,6 +26,7 @@ import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
+import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.service.UserService;
@@ -269,6 +270,31 @@ class UserControllerTest {
             patch("/api/users/me/password").contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false));
+  }
+
+  // ============ DELETE /api/users/me (회원탈퇴) ============
+
+  @Test
+  @DisplayName("withdraw_LOCAL_정상_200반환")
+  void withdraw_local_returns200() throws Exception {
+    WithdrawRequest request = new WithdrawRequest("currentPass");
+    willDoNothing().given(userService).withdraw(eq(1L), any(WithdrawRequest.class));
+
+    mockMvc
+        .perform(
+            delete("/api/users/me")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  @DisplayName("withdraw_OAuth_body없음_200반환")
+  void withdraw_oauth_noBody_returns200() throws Exception {
+    willDoNothing().given(userService).withdraw(eq(1L), any());
+
+    mockMvc.perform(delete("/api/users/me")).andExpect(status().isOk());
   }
 
   // ============ POST /api/users/me/profile-image ============

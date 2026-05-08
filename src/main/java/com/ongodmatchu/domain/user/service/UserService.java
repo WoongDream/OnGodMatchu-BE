@@ -6,6 +6,7 @@ import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
+import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -158,6 +159,32 @@ public class UserService {
       s3Service.deleteQuietly(previousKey);
     }
     return toResponse(user);
+  }
+
+  /**
+   * 회원탈퇴 — soft delete. LOCAL 은 현재 비밀번호 재확인, OAuth 는 생략. UNIQUE 충돌 회피를 위해 email/nickname 을 publicId
+   * 기반 익명화 값으로 치환하고 isActive=false / deletedAt 을 기록한다. RT 전체 무효화 + 프로필 이미지 best-effort 삭제.
+   */
+  @Transactional
+  public void withdraw(Long userId, WithdrawRequest request) {
+    User user = findUserById(userId);
+    if (user.getProvider() == AuthProvider.LOCAL) {
+      String currentPassword = request == null ? null : request.currentPassword();
+      if (currentPassword == null
+          || user.getPassword() == null
+          || !passwordEncoder.matches(currentPassword, user.getPassword())) {
+        throw new BusinessException(ErrorCode.WITHDRAWAL_PASSWORD_MISMATCH);
+      }
+    }
+
+    String anonymizedKey = "deleted_" + user.getPublicId();
+    String previousImageKey = user.getProfileImageKey();
+    user.withdraw(anonymizedKey + "@deleted.local", anonymizedKey);
+
+    refreshTokenRepository.deleteByUserId(userId);
+    if (previousImageKey != null) {
+      s3Service.deleteQuietly(previousImageKey);
+    }
   }
 
   @Transactional

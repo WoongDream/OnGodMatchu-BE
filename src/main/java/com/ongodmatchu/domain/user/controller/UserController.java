@@ -12,6 +12,7 @@ import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.ProfileStatsResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
+import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.service.UserService;
 import com.ongodmatchu.global.response.ApiResponse;
 import com.ongodmatchu.infra.s3.PresignedUrlRequest;
@@ -77,6 +78,18 @@ public class UserController {
       @Valid @RequestBody UserUpdateRequest request) {
     UserResponse response = userService.updateMe(userDetails.getUser().getId(), request);
     return ResponseEntity.ok(ApiResponse.ok(response));
+  }
+
+  @Operation(
+      summary = "회원탈퇴 (soft delete)",
+      description =
+          "LOCAL 계정은 body { currentPassword } 필수 — 미일치 시 WITHDRAWAL_PASSWORD_MISMATCH(401). OAuth 계정은 body 생략 가능. 처리: isActive=false + deletedAt + email/nickname 익명화(deleted_<publicId>) + RT 전체 무효화 + 프로필 이미지 S3 best-effort 삭제. 퀴즈/플레이 기록은 보존. body 자체가 null 인 경우 OAuth 만 허용.")
+  @DeleteMapping("/me")
+  public ResponseEntity<ApiResponse<Void>> withdraw(
+      @AuthenticationPrincipal CustomUserDetails userDetails,
+      @RequestBody(required = false) WithdrawRequest request) {
+    userService.withdraw(userDetails.getUser().getId(), request);
+    return ResponseEntity.ok(ApiResponse.ok());
   }
 
   @Operation(
