@@ -1,10 +1,10 @@
 ---
 name: QuizService 테스트 현황 분석
-description: src/test/java/.../QuizServiceTest.java 현재 커버리지 — 39개 케이스 완성
+description: src/test/java/.../QuizServiceTest.java 현재 커버리지 — 63개 케이스 완성
 type: project
 ---
 
-## 현재 테스트 커버리지 (39개 테스트) — 2026-05-02 기준
+## 현재 테스트 커버리지 (63개 테스트) — 2026-05-07 업데이트
 
 ### getQuizList (2개)
 - noCategory / withCategory
@@ -49,6 +49,18 @@ type: project
 - questionWithDifferentImageKeys_deletesBoth: imageKey/answerImageKey 각각 deleteQuietly
 - questionWithSameImageAndAnswerKey_deletesOnce: times(1) 검증
 - questionWithNoImageKeys_noS3Delete: never() 검증
+
+### getProfileStats (5개 신규) — 2026-05-07 추가
+- returnsAggregatedRow: countWeeklyPlaysOfQuizzesOwnedBy + perQuizCorrectRatesOwnedBy 모두 stub 필수
+- weeklyPlayCount_aggregated: weekly=12L 반환
+- avgCorrectRate_singleQuiz: perQuizRates=[80.0] → avgCorrectRate=80.0
+- avgCorrectRate_multipleQuizzes_simpleAverage: [60,80,100] → 80.0
+- emptyPerQuizRates_avgCorrectRateIsNull: perQuizRates=[] → avgCorrectRate=null
+
+### getMyQuizList correctRate 매핑 (3개 신규) — 2026-05-07 추가
+- correctRateByQuizIds결과_quizId별correctRate매핑: QuizCorrectRateRow 익명 구현으로 stub
+- noCorrectRateResult_correctRateIsNull: correctRateByQuizIds 빈 리스트 → correctRate null
+- emptyPage_correctRateQueryNotCalled: 퀴즈 0개면 correctRateByQuizIds 미호출
 
 ## 핵심 패턴
 - `User.updateProfilePublic(false)` 로 비공개 유저 fixture 생성
