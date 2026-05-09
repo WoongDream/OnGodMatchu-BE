@@ -30,6 +30,7 @@ import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.service.UserService;
+import com.ongodmatchu.domain.user.service.WithdrawalCodeService;
 import com.ongodmatchu.infra.s3.PresignedUrlRequest;
 import com.ongodmatchu.infra.s3.PresignedUrlResponse;
 import java.time.OffsetDateTime;
@@ -65,6 +66,7 @@ class UserControllerTest {
   @MockitoBean private UserService userService;
   @MockitoBean private QuizService quizService;
   @MockitoBean private QuizAttemptService quizAttemptService;
+  @MockitoBean private WithdrawalCodeService withdrawalCodeService;
   @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
   private User testUser;
@@ -275,9 +277,20 @@ class UserControllerTest {
   // ============ DELETE /api/users/me (회원탈퇴) ============
 
   @Test
-  @DisplayName("withdraw_LOCAL_정상_200반환")
-  void withdraw_local_returns200() throws Exception {
-    WithdrawRequest request = new WithdrawRequest("currentPass", "탈퇴하겠습니다.", false, null, null);
+  @DisplayName("withdrawalCode_정상_200반환_서비스위임")
+  void requestWithdrawalCode_returns200() throws Exception {
+    willDoNothing().given(withdrawalCodeService).sendCode(eq(1L), anyString());
+
+    mockMvc
+        .perform(post("/api/users/me/withdrawal-code"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  @DisplayName("withdraw_정상_200반환_새페이로드")
+  void withdraw_returns200() throws Exception {
+    WithdrawRequest request = new WithdrawRequest("123456", "탈퇴하겠습니다.", false, "시간이 부족해서요");
     willDoNothing().given(userService).withdraw(eq(1L), any(WithdrawRequest.class));
 
     mockMvc
@@ -290,9 +303,9 @@ class UserControllerTest {
   }
 
   @Test
-  @DisplayName("withdraw_OAuth_body_확인문구만_200반환")
-  void withdraw_oauth_phraseOnly_returns200() throws Exception {
-    WithdrawRequest request = new WithdrawRequest(null, "탈퇴하겠습니다.", true, null, null);
+  @DisplayName("withdraw_deleteOwnQuizzes_true_200반환")
+  void withdraw_deleteOwnQuizzes_returns200() throws Exception {
+    WithdrawRequest request = new WithdrawRequest("123456", "탈퇴하겠습니다.", true, null);
     willDoNothing().given(userService).withdraw(eq(1L), any(WithdrawRequest.class));
 
     mockMvc

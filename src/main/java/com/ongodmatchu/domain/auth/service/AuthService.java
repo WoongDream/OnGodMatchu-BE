@@ -62,7 +62,7 @@ public class AuthService {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
     }
 
-    rateLimiter.check(email, ipAddress);
+    rateLimiter.check(email, ipAddress, "signup");
 
     String code = generateCode();
     emailVerificationRepository.deleteByEmail(email);

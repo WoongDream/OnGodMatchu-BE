@@ -35,11 +35,16 @@ public class VerificationCodeRateLimiter {
     this.clock = clock;
   }
 
-  public synchronized void check(String email, String ipAddress) {
+  /**
+   * 이메일/IP 별 발송 한도 체크. {@code purpose} 로 가입(signup)·회원탈퇴(withdrawal) 등 컨텍스트를 분리해 한도가 합산되지 않도록 한다.
+   */
+  public synchronized void check(String email, String ipAddress, String purpose) {
     Instant now = clock.instant();
-    Deque<Instant> emailQueue = emailHits.computeIfAbsent(email, k -> new ArrayDeque<>());
+    String emailKey = purpose + ":" + email;
+    String ipKey = ipAddress == null ? null : purpose + ":" + ipAddress;
+    Deque<Instant> emailQueue = emailHits.computeIfAbsent(emailKey, k -> new ArrayDeque<>());
     Deque<Instant> ipQueue =
-        ipAddress == null ? null : ipHits.computeIfAbsent(ipAddress, k -> new ArrayDeque<>());
+        ipKey == null ? null : ipHits.computeIfAbsent(ipKey, k -> new ArrayDeque<>());
 
     pruneOlderThan(emailQueue, now.minus(WINDOW));
     if (ipQueue != null) {

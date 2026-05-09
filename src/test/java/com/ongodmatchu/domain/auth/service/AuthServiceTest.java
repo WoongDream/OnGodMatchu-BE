@@ -79,7 +79,7 @@ class AuthServiceTest {
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
 
-    then(rateLimiter).should(never()).check(anyString(), anyString());
+    then(rateLimiter).should(never()).check(anyString(), anyString(), anyString());
     then(emailVerificationRepository).should(never()).save(any());
     then(mailService).should(never()).sendVerificationCode(anyString(), anyString());
   }
@@ -88,7 +88,9 @@ class AuthServiceTest {
   @DisplayName("코드발송_rate_limit_초과시_RateLimitException_저장및메일미발생")
   void requestVerificationCode_rateLimited_throws() {
     given(userRepository.existsByEmail("ok@example.com")).willReturn(false);
-    willThrow(new RateLimitException(42)).given(rateLimiter).check("ok@example.com", "1.1.1.1");
+    willThrow(new RateLimitException(42))
+        .given(rateLimiter)
+        .check("ok@example.com", "1.1.1.1", "signup");
 
     assertThatThrownBy(() -> authService.requestVerificationCode("ok@example.com", "1.1.1.1"))
         .isInstanceOf(RateLimitException.class)
@@ -106,7 +108,7 @@ class AuthServiceTest {
 
     authService.requestVerificationCode("new@example.com", "1.2.3.4");
 
-    then(rateLimiter).should().check("new@example.com", "1.2.3.4");
+    then(rateLimiter).should().check("new@example.com", "1.2.3.4", "signup");
     then(emailVerificationRepository).should().deleteByEmail("new@example.com");
 
     ArgumentCaptor<EmailVerification> captor = ArgumentCaptor.forClass(EmailVerification.class);

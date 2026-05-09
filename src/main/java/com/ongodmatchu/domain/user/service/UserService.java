@@ -11,7 +11,6 @@ import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.entity.AdminAccount;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
-import com.ongodmatchu.domain.user.entity.WithdrawalReason;
 import com.ongodmatchu.domain.user.entity.WithdrawalReasonRecord;
 import com.ongodmatchu.domain.user.repository.UserRepository;
 import com.ongodmatchu.domain.user.repository.WithdrawalReasonRepository;
@@ -51,6 +50,7 @@ public class UserService {
   private final ProfileImageGenerator profileImageGenerator;
   private final QuizService quizService;
   private final WithdrawalReasonRepository withdrawalReasonRepository;
+  private final WithdrawalCodeService withdrawalCodeService;
 
   @Value("${app.profile.default-image-url}")
   private String defaultProfileImageUrl;
@@ -171,14 +171,14 @@ public class UserService {
   }
 
   /**
-   * 회원탈퇴 — soft delete + 본인 퀴즈 처리(이전/삭제) + 탈퇴 이유 기록.
+   * 회원탈퇴 — soft delete + 본인 퀴즈 처리(이전/삭제) + 탈퇴 이유 익명 저장.
    *
    * <ol>
    *   <li>모달 "탈퇴하겠습니다." 문구 일치 검증 → 미일치 시 {@link ErrorCode#INVALID_WITHDRAWAL_CONFIRMATION}
-   *   <li>LOCAL 은 currentPassword 재확인, OAuth 는 생략
+   *   <li>이메일 인증 코드 검증 + 소비 (LOCAL/OAuth 무관 동일)
    *   <li>{@code deleteOwnQuizzes=true} 면 본인 퀴즈+연관 데이터 일괄 삭제 / {@code false}(default) 면 시스템 관리자
    *       계정으로 작성자 일괄 이전
-   *   <li>탈퇴 이유 익명 통계 저장 (reason!=null 시)
+   *   <li>탈퇴 이유(주관식) 익명 통계 저장 (reasonText 가 비어있지 않을 때)
    *   <li>email/nickname 익명화 + isActive=false + deletedAt 기록 + RT 전체 무효화 + 프로필 이미지 best-effort 삭제
    * </ol>
    */
@@ -190,14 +190,7 @@ public class UserService {
     if (!WITHDRAWAL_CONFIRMATION_PHRASE.equals(confirmation)) {
       throw new BusinessException(ErrorCode.INVALID_WITHDRAWAL_CONFIRMATION);
     }
-    if (user.getProvider() == AuthProvider.LOCAL) {
-      String currentPassword = request.currentPassword();
-      if (currentPassword == null
-          || user.getPassword() == null
-          || !passwordEncoder.matches(currentPassword, user.getPassword())) {
-        throw new BusinessException(ErrorCode.WITHDRAWAL_PASSWORD_MISMATCH);
-      }
-    }
+    withdrawalCodeService.verifyAndConsume(userId, request.verificationCode());
 
     if (request.shouldDeleteOwnQuizzes()) {
       quizService.deleteAllByUserId(userId);
@@ -209,7 +202,7 @@ public class UserService {
       quizService.transferOwnershipToAdmin(userId, admin.getId());
     }
 
-    saveWithdrawalReason(request.reason(), request.reasonText());
+    saveWithdrawalReason(request.reasonText());
 
     String anonymizedKey = "deleted_" + user.getPublicId();
     String previousImageKey = user.getProfileImageKey();
@@ -221,16 +214,15 @@ public class UserService {
     }
   }
 
-  private void saveWithdrawalReason(WithdrawalReason reason, String reasonText) {
-    if (reason == null) {
+  private void saveWithdrawalReason(String reasonText) {
+    if (reasonText == null) {
       return;
     }
-    String trimmedText = reasonText == null ? null : reasonText.trim();
-    if (trimmedText != null && trimmedText.isEmpty()) {
-      trimmedText = null;
+    String trimmed = reasonText.trim();
+    if (trimmed.isEmpty()) {
+      return;
     }
-    withdrawalReasonRepository.save(
-        WithdrawalReasonRecord.builder().reasonCode(reason.name()).reasonText(trimmedText).build());
+    withdrawalReasonRepository.save(WithdrawalReasonRecord.builder().reasonText(trimmed).build());
   }
 
   @Transactional
