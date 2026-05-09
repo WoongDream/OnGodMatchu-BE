@@ -16,6 +16,7 @@ import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
+import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -904,5 +905,56 @@ class UserServiceTest {
     UserResponse result = userService.getMe(1L);
 
     assertThat(result.activeDays()).isEqualTo(7L);
+  }
+
+  // ============ agreeToCurrentTerms ============
+
+  @Test
+  @DisplayName("agreeToCurrentTerms_NULL상태에서호출_현재버전과시각기록_마케팅false")
+  void agreeToCurrentTerms_recordsCurrentVersion() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    userService.agreeToCurrentTerms(1L, new TermsAgreementRequest(false));
+
+    assertThat(user.getTermsVersion()).isEqualTo("1.0");
+    assertThat(user.getPrivacyVersion()).isEqualTo("1.0");
+    assertThat(user.isMarketingAgreed()).isFalse();
+    assertThat(user.getTermsAgreedAt()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("agreeToCurrentTerms_request_null이어도정상동의기록")
+  void agreeToCurrentTerms_nullRequest_recordsAsNonMarketing() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    userService.agreeToCurrentTerms(1L, null);
+
+    assertThat(user.getTermsVersion()).isEqualTo("1.0");
+    assertThat(user.isMarketingAgreed()).isFalse();
+    assertThat(user.getTermsAgreedAt()).isNotNull();
+  }
+
+  @Test
+  @DisplayName("agreeToCurrentTerms_마케팅true_기록됨")
+  void agreeToCurrentTerms_marketingTrue_recordsTrue() {
+    User user = buildLocalUser(1L, "유저");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    userService.agreeToCurrentTerms(1L, new TermsAgreementRequest(true));
+
+    assertThat(user.isMarketingAgreed()).isTrue();
+  }
+
+  @Test
+  @DisplayName("agreeToCurrentTerms_사용자미존재_USER_NOT_FOUND예외")
+  void agreeToCurrentTerms_userNotFound_throws() {
+    given(userRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> userService.agreeToCurrentTerms(99L, new TermsAgreementRequest(false)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
   }
 }

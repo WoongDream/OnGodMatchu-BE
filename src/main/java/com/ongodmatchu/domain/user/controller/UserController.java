@@ -10,6 +10,7 @@ import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.ProfileStatsResponse;
+import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -103,6 +104,18 @@ public class UserController {
       @AuthenticationPrincipal CustomUserDetails userDetails,
       @RequestBody(required = false) WithdrawRequest request) {
     userService.withdraw(userDetails.getUser().getId(), request);
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  @Operation(
+      summary = "약관 동의 처리",
+      description =
+          "현재 버전 이용약관/개인정보처리방침 동의 처리. 호출 자체로 필수 약관 동의 간주. agreedToMarketing 은 옵셔널. OAuth 첫 가입자나 약관 변경 후 재동의 시 사용. 가능 에러: 없음 (idempotent)")
+  @PostMapping("/me/terms-agreement")
+  public ResponseEntity<ApiResponse<Void>> agreeToTerms(
+      @AuthenticationPrincipal CustomUserDetails userDetails,
+      @RequestBody(required = false) TermsAgreementRequest request) {
+    userService.agreeToCurrentTerms(userDetails.getUser().getId(), request);
     return ResponseEntity.ok(ApiResponse.ok());
   }
 

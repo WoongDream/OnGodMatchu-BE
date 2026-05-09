@@ -2,9 +2,11 @@ package com.ongodmatchu.domain.user.service;
 
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
+import com.ongodmatchu.domain.auth.validation.TermsPolicy;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
+import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -59,6 +61,16 @@ public class UserService {
   public UserResponse getMe(Long userId) {
     User user = findUserById(userId);
     return toResponse(user);
+  }
+
+  /** 약관 미동의 사용자가 현재 버전 약관에 동의 처리. 이미 동의된 사용자가 호출해도 idempotent. */
+  @Transactional
+  public void agreeToCurrentTerms(Long userId, TermsAgreementRequest request) {
+    User user = findUserById(userId);
+    user.agreeToTerms(
+        TermsPolicy.CURRENT_TERMS_VERSION,
+        TermsPolicy.CURRENT_PRIVACY_VERSION,
+        request != null && request.marketingOptIn());
   }
 
   /** 본인이거나 공개 프로필이면 {@link UserResponse}, 비공개면 {@link PublicUserResponse} 를 반환한다. */

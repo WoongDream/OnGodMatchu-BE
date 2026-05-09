@@ -48,6 +48,41 @@ class TermsPolicyTest {
         .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
   }
 
+  // ============ needsAgreement — 동의 필요 여부 ============
+
+  @Test
+  @DisplayName("needsAgreement_termsVersion이NULL_true반환")
+  void needsAgreement_termsVersionNull_returnsTrue() {
+    assertThat(TermsPolicy.needsAgreement(null, TermsPolicy.CURRENT_PRIVACY_VERSION)).isTrue();
+  }
+
+  @Test
+  @DisplayName("needsAgreement_privacyVersion이NULL_true반환")
+  void needsAgreement_privacyVersionNull_returnsTrue() {
+    assertThat(TermsPolicy.needsAgreement(TermsPolicy.CURRENT_TERMS_VERSION, null)).isTrue();
+  }
+
+  @Test
+  @DisplayName("needsAgreement_둘다NULL_true반환")
+  void needsAgreement_bothNull_returnsTrue() {
+    assertThat(TermsPolicy.needsAgreement(null, null)).isTrue();
+  }
+
+  @Test
+  @DisplayName("needsAgreement_구버전동의_true반환")
+  void needsAgreement_outdatedVersion_returnsTrue() {
+    assertThat(TermsPolicy.needsAgreement("0.9", "0.9")).isTrue();
+  }
+
+  @Test
+  @DisplayName("needsAgreement_현재버전동의_false반환")
+  void needsAgreement_currentVersion_returnsFalse() {
+    assertThat(
+            TermsPolicy.needsAgreement(
+                TermsPolicy.CURRENT_TERMS_VERSION, TermsPolicy.CURRENT_PRIVACY_VERSION))
+        .isFalse();
+  }
+
   // ============ 상수 값 검증 ============
 
   @Test

@@ -107,7 +107,8 @@ class AuthControllerTest {
                 java.time.OffsetDateTime.now(),
                 0L,
                 true,
-                "LOCAL"),
+                "LOCAL",
+                false),
             "AT",
             "RT");
     given(authService.signup(any(SignupRequest.class))).willReturn(response);

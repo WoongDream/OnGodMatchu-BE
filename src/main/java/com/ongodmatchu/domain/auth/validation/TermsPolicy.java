@@ -16,4 +16,10 @@ public final class TermsPolicy {
       throw new BusinessException(ErrorCode.TERMS_AGREEMENT_REQUIRED);
     }
   }
+
+  /** 사용자가 현재 버전 약관에 동의했는지 — NULL 또는 구버전이면 재동의 필요. */
+  public static boolean needsAgreement(String termsVersion, String privacyVersion) {
+    return !CURRENT_TERMS_VERSION.equals(termsVersion)
+        || !CURRENT_PRIVACY_VERSION.equals(privacyVersion);
+  }
 }
