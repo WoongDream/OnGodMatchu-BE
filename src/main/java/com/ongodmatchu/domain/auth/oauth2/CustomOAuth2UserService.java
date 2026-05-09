@@ -1,6 +1,7 @@
 package com.ongodmatchu.domain.auth.oauth2;
 
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
+import com.ongodmatchu.domain.auth.validation.TermsPolicy;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -49,14 +50,17 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
 
   private User registerUser(OAuth2UserInfo userInfo, String registrationId) {
     User user =
-        userRepository.saveAndFlush(
-            User.builder()
-                .email(userInfo.getEmail())
-                .nickname(nicknameGenerator.generate())
-                .provider(AuthProvider.valueOf(registrationId.toUpperCase()))
-                .providerId(userInfo.getId())
-                .emailVerified(true)
-                .build());
+        User.builder()
+            .email(userInfo.getEmail())
+            .nickname(nicknameGenerator.generate())
+            .provider(AuthProvider.valueOf(registrationId.toUpperCase()))
+            .providerId(userInfo.getId())
+            .emailVerified(true)
+            .build();
+    // TODO: OAuth 첫 가입자도 약관 동의 페이지를 거치도록 후속 작업 (현재는 자동 동의 처리).
+    user.agreeToTerms(
+        TermsPolicy.CURRENT_TERMS_VERSION, TermsPolicy.CURRENT_PRIVACY_VERSION, false);
+    userRepository.saveAndFlush(user);
     profileImageInitializer.initialize(user);
     return user;
   }

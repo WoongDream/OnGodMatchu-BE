@@ -66,6 +66,15 @@ public class User extends BaseTimeEntity {
 
   private LocalDateTime deletedAt;
 
+  private String termsVersion;
+
+  private String privacyVersion;
+
+  @Column(nullable = false)
+  private boolean marketingAgreed = false;
+
+  private LocalDateTime termsAgreedAt;
+
   @Builder
   private User(
       String email,
@@ -121,6 +130,14 @@ public class User extends BaseTimeEntity {
 
   public void touchLastActiveAt() {
     this.lastActiveAt = LocalDateTime.now();
+  }
+
+  /** 가입 시점 약관 동의 기록. 재동의 플로우는 후속 작업. */
+  public void agreeToTerms(String termsVersion, String privacyVersion, boolean marketingAgreed) {
+    this.termsVersion = termsVersion;
+    this.privacyVersion = privacyVersion;
+    this.marketingAgreed = marketingAgreed;
+    this.termsAgreedAt = LocalDateTime.now();
   }
 
   public void withdraw(String anonymizedEmail, String anonymizedNickname) {

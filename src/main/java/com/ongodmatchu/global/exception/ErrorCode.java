@@ -32,6 +32,7 @@ public enum ErrorCode {
   INVALID_BIO_FORMAT(HttpStatus.BAD_REQUEST, "INVALID_BIO_FORMAT", "한 줄 소개 형식이 올바르지 않습니다."),
   INVALID_WITHDRAWAL_CONFIRMATION(
       HttpStatus.BAD_REQUEST, "INVALID_WITHDRAWAL_CONFIRMATION", "탈퇴 확인 문구가 올바르지 않습니다."),
+  TERMS_AGREEMENT_REQUIRED(HttpStatus.BAD_REQUEST, "TERMS_AGREEMENT_REQUIRED", "필수 약관에 동의해야 합니다."),
 
   // Email verification
   INVALID_VERIFICATION_CODE(

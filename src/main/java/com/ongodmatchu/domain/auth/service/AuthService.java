@@ -12,6 +12,7 @@ import com.ongodmatchu.domain.auth.ratelimit.VerificationCodeRateLimiter;
 import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
+import com.ongodmatchu.domain.auth.validation.TermsPolicy;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -77,6 +78,10 @@ public class AuthService {
 
   @Transactional
   public SignupResponse signup(SignupRequest request) {
+    TermsPolicy.enforceRequired(
+        Boolean.TRUE.equals(request.agreedToTerms()),
+        Boolean.TRUE.equals(request.agreedToPrivacy()));
+
     if (userRepository.existsByEmail(request.email())) {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
     }
@@ -108,6 +113,10 @@ public class AuthService {
             .provider(AuthProvider.LOCAL)
             .emailVerified(true)
             .build();
+    user.agreeToTerms(
+        TermsPolicy.CURRENT_TERMS_VERSION,
+        TermsPolicy.CURRENT_PRIVACY_VERSION,
+        request.marketingOptIn());
     try {
       userRepository.saveAndFlush(user);
     } catch (DataIntegrityViolationException e) {
