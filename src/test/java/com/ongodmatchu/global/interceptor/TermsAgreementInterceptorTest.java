@@ -140,6 +140,32 @@ class TermsAgreementInterceptorTest {
   }
 
   @Test
+  @DisplayName("화이트리스트: POST /api/users/me/withdrawal-code — 탈퇴 인증 코드 발송은 약관 미동의여도 통과")
+  void preHandle_whitelistWithdrawalCode_returnsTrue() throws Exception {
+    User user = buildUserWithTerms(null, null);
+    setAuthenticatedUser(user);
+    request.setMethod("POST");
+    request.setRequestURI("/api/users/me/withdrawal-code");
+
+    boolean result = interceptor.preHandle(request, response, handler);
+
+    assertThat(result).isTrue();
+  }
+
+  @Test
+  @DisplayName("화이트리스트: POST /api/auth/refresh — 토큰 갱신은 약관 미동의여도 통과")
+  void preHandle_whitelistAuthRefresh_returnsTrue() throws Exception {
+    User user = buildUserWithTerms(null, null);
+    setAuthenticatedUser(user);
+    request.setMethod("POST");
+    request.setRequestURI("/api/auth/refresh");
+
+    boolean result = interceptor.preHandle(request, response, handler);
+
+    assertThat(result).isTrue();
+  }
+
+  @Test
   @DisplayName("비화이트리스트 경로 + termsVersion=null 사용자 → TERMS_AGREEMENT_OUTDATED 예외")
   void preHandle_nonWhitelist_nullTermsVersion_throwsException() {
     User user = buildUserWithTerms(null, null);
