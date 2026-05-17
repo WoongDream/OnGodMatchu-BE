@@ -434,6 +434,27 @@ class AuthServiceTest {
   }
 
   @Test
+  @DisplayName("로그인_탈퇴계정_USER_NOT_FOUND마스킹")
+  void login_inactiveUser_throwsUserNotFound() {
+    User withdrawn =
+        User.builder()
+            .email("deleted_abc@deleted.local")
+            .nickname("deleted_abc")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(withdrawn, "isActive", false);
+    given(userRepository.findByEmail("deleted_abc@deleted.local"))
+        .willReturn(Optional.of(withdrawn));
+
+    assertThatThrownBy(
+            () -> authService.login(new LoginRequest("deleted_abc@deleted.local", "anything")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  @Test
   @DisplayName("로그인_잘못된비밀번호_예외발생")
   void login_invalidPassword_throwsException() {
     User user =
@@ -545,9 +566,18 @@ class AuthServiceTest {
             .token("valid-token")
             .expiresAt(LocalDateTime.now().plusSeconds(3600))
             .build();
+    User activeUser =
+        User.builder()
+            .email("ok@example.com")
+            .nickname("유저")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(activeUser, "id", 1L);
     ReflectionTestUtils.setField(authService, "refreshTokenExpiry", 1209600000L);
 
     given(refreshTokenRepository.findByToken("valid-token")).willReturn(Optional.of(validToken));
+    given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
     given(jwtProvider.generateAccessToken(1L)).willReturn("new-access-token");
     given(jwtProvider.generateRefreshToken(1L)).willReturn("new-refresh-token");
 
@@ -557,6 +587,37 @@ class AuthServiceTest {
     assertThat(result.refreshToken()).isEqualTo("new-refresh-token");
     then(refreshTokenRepository).should().delete(validToken);
     then(refreshTokenRepository).should().save(any(RefreshToken.class));
+  }
+
+  @Test
+  @DisplayName("토큰갱신_탈퇴계정_UNAUTHORIZED_RT삭제")
+  void refresh_inactiveUser_throwsUnauthorized() {
+    RefreshToken validToken =
+        RefreshToken.builder()
+            .userId(7L)
+            .token("valid-token")
+            .expiresAt(LocalDateTime.now().plusSeconds(3600))
+            .build();
+    User withdrawn =
+        User.builder()
+            .email("deleted_xyz@deleted.local")
+            .nickname("deleted_xyz")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(withdrawn, "id", 7L);
+    ReflectionTestUtils.setField(withdrawn, "isActive", false);
+
+    given(refreshTokenRepository.findByToken("valid-token")).willReturn(Optional.of(validToken));
+    given(userRepository.findById(7L)).willReturn(Optional.of(withdrawn));
+
+    assertThatThrownBy(() -> authService.refresh("valid-token"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+    then(refreshTokenRepository).should().delete(validToken);
+    then(refreshTokenRepository).should(never()).save(any(RefreshToken.class));
   }
 
   // ============ Logout Tests ============

@@ -35,8 +35,13 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
           + "FROM Quiz q WHERE q.user.id = :userId")
   QuizAggregateRow aggregateByUserId(@Param("userId") Long userId);
 
-  /** 회원탈퇴 시 본인 소유 퀴즈를 시스템 관리자 계정으로 일괄 이전. */
-  @Modifying(clearAutomatically = true, flushAutomatically = true)
+  /**
+   * 회원탈퇴 시 본인 소유 퀴즈를 시스템 관리자 계정으로 일괄 이전.
+   *
+   * <p>clearAutomatically=false — true 로 두면 호출자(`UserService.withdraw`) 가 미리 로드한 user 인스턴스까지 detach
+   * 되어 이후 `user.withdraw(...)` 의 dirty checking 이 무시되고 users 행 UPDATE 가 누락된다.
+   */
+  @Modifying(flushAutomatically = true)
   @Query("UPDATE Quiz q SET q.user.id = :toUserId WHERE q.user.id = :fromUserId")
   int transferOwnership(@Param("fromUserId") Long fromUserId, @Param("toUserId") Long toUserId);
 
