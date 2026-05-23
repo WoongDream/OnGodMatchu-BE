@@ -63,14 +63,18 @@ public class UserService {
     return toResponse(user);
   }
 
-  /** 약관 미동의 사용자가 현재 버전 약관에 동의 처리. 이미 동의된 사용자가 호출해도 idempotent. */
+  /**
+   * 약관 미동의 사용자가 현재 버전 약관에 동의 처리. 이미 동의된 사용자가 호출해도 idempotent. 동의 후 갱신된 {@link UserResponse} 를 반환해
+   * FE 가 별도 GET /me 없이 store 동기화 가능.
+   */
   @Transactional
-  public void agreeToCurrentTerms(Long userId, TermsAgreementRequest request) {
+  public UserResponse agreeToCurrentTerms(Long userId, TermsAgreementRequest request) {
     User user = findUserById(userId);
     user.agreeToTerms(
         TermsPolicy.CURRENT_TERMS_VERSION,
         TermsPolicy.CURRENT_PRIVACY_VERSION,
         request != null && request.marketingOptIn());
+    return toResponse(user);
   }
 
   /** 본인이거나 공개 프로필이면 {@link UserResponse}, 비공개면 {@link PublicUserResponse} 를 반환한다. */
