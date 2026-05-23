@@ -79,7 +79,7 @@ class AuthServiceTest {
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
 
-    then(rateLimiter).should(never()).check(anyString(), anyString());
+    then(rateLimiter).should(never()).check(anyString(), anyString(), anyString());
     then(emailVerificationRepository).should(never()).save(any());
     then(mailService).should(never()).sendVerificationCode(anyString(), anyString());
   }
@@ -88,7 +88,9 @@ class AuthServiceTest {
   @DisplayName("코드발송_rate_limit_초과시_RateLimitException_저장및메일미발생")
   void requestVerificationCode_rateLimited_throws() {
     given(userRepository.existsByEmail("ok@example.com")).willReturn(false);
-    willThrow(new RateLimitException(42)).given(rateLimiter).check("ok@example.com", "1.1.1.1");
+    willThrow(new RateLimitException(42))
+        .given(rateLimiter)
+        .check("ok@example.com", "1.1.1.1", "signup");
 
     assertThatThrownBy(() -> authService.requestVerificationCode("ok@example.com", "1.1.1.1"))
         .isInstanceOf(RateLimitException.class)
@@ -106,7 +108,7 @@ class AuthServiceTest {
 
     authService.requestVerificationCode("new@example.com", "1.2.3.4");
 
-    then(rateLimiter).should().check("new@example.com", "1.2.3.4");
+    then(rateLimiter).should().check("new@example.com", "1.2.3.4", "signup");
     then(emailVerificationRepository).should().deleteByEmail("new@example.com");
 
     ArgumentCaptor<EmailVerification> captor = ArgumentCaptor.forClass(EmailVerification.class);
@@ -128,7 +130,8 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.signup(
-                    new SignupRequest("dup@example.com", "닉네임", "password123", "123456")))
+                    new SignupRequest(
+                        "dup@example.com", "닉네임", "password123", "123456", true, true, false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
@@ -146,7 +149,8 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.signup(
-                    new SignupRequest("new@example.com", "닉네임", "password123", "123456")))
+                    new SignupRequest(
+                        "new@example.com", "닉네임", "password123", "123456", true, true, false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
@@ -170,7 +174,8 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.signup(
-                    new SignupRequest("new@example.com", "닉네임", "password123", "123456")))
+                    new SignupRequest(
+                        "new@example.com", "닉네임", "password123", "123456", true, true, false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.VERIFICATION_CODE_EXPIRED);
@@ -188,7 +193,8 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.signup(
-                    new SignupRequest("new@example.com", "닉네임", "password123", "999999")))
+                    new SignupRequest(
+                        "new@example.com", "닉네임", "password123", "999999", true, true, false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
@@ -219,7 +225,9 @@ class AuthServiceTest {
     given(jwtProvider.generateRefreshToken(7L)).willReturn("RT");
 
     SignupResponse response =
-        authService.signup(new SignupRequest("new@example.com", "새사용자", "password123", "123456"));
+        authService.signup(
+            new SignupRequest(
+                "new@example.com", "새사용자", "password123", "123456", true, true, false));
 
     assertThat(response.accessToken()).isEqualTo("AT");
     assertThat(response.refreshToken()).isEqualTo("RT");
@@ -233,9 +241,74 @@ class AuthServiceTest {
     assertThat(saved.getProvider()).isEqualTo(AuthProvider.LOCAL);
     assertThat(saved.isEmailVerified()).isTrue();
     assertThat(saved.getPassword()).isEqualTo("hashed");
+    assertThat(saved.getTermsVersion()).isEqualTo("1.0");
+    assertThat(saved.getPrivacyVersion()).isEqualTo("1.0");
+    assertThat(saved.isMarketingAgreed()).isFalse();
+    assertThat(saved.getTermsAgreedAt()).isNotNull();
 
     then(emailVerificationRepository).should().deleteByEmail("new@example.com");
     then(refreshTokenRepository).should().save(any(RefreshToken.class));
+  }
+
+  @Test
+  @DisplayName("회원가입_약관미동의_TERMS_AGREEMENT_REQUIRED_사전차단_저장미호출")
+  void signup_termsNotAgreed_throws() {
+    assertThatThrownBy(
+            () ->
+                authService.signup(
+                    new SignupRequest(
+                        "new@example.com", "닉네임", "password123", "123456", false, true, false)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
+
+    then(userRepository).should(never()).existsByEmail(anyString());
+    then(userRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  @DisplayName("회원가입_개인정보처리방침미동의_TERMS_AGREEMENT_REQUIRED")
+  void signup_privacyNotAgreed_throws() {
+    assertThatThrownBy(
+            () ->
+                authService.signup(
+                    new SignupRequest(
+                        "new@example.com", "닉네임", "password123", "123456", true, false, false)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
+
+    then(userRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  @DisplayName("회원가입_마케팅동의true_marketingAgreed_true_로_저장")
+  void signup_marketingTrue_recordsTrue() {
+    ReflectionTestUtils.setField(authService, "refreshTokenExpiry", 1209600000L);
+
+    given(userRepository.existsByEmail("mk@example.com")).willReturn(false);
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("mk@example.com"))
+        .willReturn(Optional.of(validVerification("mk@example.com", "123456")));
+    given(nicknameNormalizer.normalize("마케터")).willReturn("마케터");
+    given(userRepository.existsByNickname("마케터")).willReturn(false);
+    given(passwordEncoder.encode("password123")).willReturn("hashed");
+    given(userRepository.saveAndFlush(any(User.class)))
+        .willAnswer(
+            inv -> {
+              User u = inv.getArgument(0);
+              ReflectionTestUtils.setField(u, "id", 8L);
+              ReflectionTestUtils.setField(u, "publicId", java.util.UUID.randomUUID());
+              return u;
+            });
+    given(jwtProvider.generateAccessToken(8L)).willReturn("AT");
+    given(jwtProvider.generateRefreshToken(8L)).willReturn("RT");
+
+    authService.signup(
+        new SignupRequest("mk@example.com", "마케터", "password123", "123456", true, true, true));
+
+    ArgumentCaptor<User> captor = ArgumentCaptor.forClass(User.class);
+    then(userRepository).should().saveAndFlush(captor.capture());
+    assertThat(captor.getValue().isMarketingAgreed()).isTrue();
   }
 
   @Test
@@ -250,7 +323,8 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.signup(
-                    new SignupRequest("user@example.com", "중복닉네임", "password123", "123456")))
+                    new SignupRequest(
+                        "user@example.com", "중복닉네임", "password123", "123456", true, true, false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
@@ -277,7 +351,8 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.signup(
-                    new SignupRequest("race@example.com", "레이스닉네임", "password123", "123456")))
+                    new SignupRequest(
+                        "race@example.com", "레이스닉네임", "password123", "123456", true, true, false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
@@ -297,7 +372,8 @@ class AuthServiceTest {
     assertThatThrownBy(
             () ->
                 authService.signup(
-                    new SignupRequest("user@example.com", "x", "password123", "123456")))
+                    new SignupRequest(
+                        "user@example.com", "x", "password123", "123456", true, true, false)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
@@ -336,6 +412,46 @@ class AuthServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.SOCIAL_USER_PASSWORD_LOGIN);
+  }
+
+  @Test
+  @DisplayName("로그인_시스템계정_USER_NOT_FOUND마스킹")
+  void login_systemAccount_throwsUserNotFound() {
+    User systemUser =
+        User.builder()
+            .email("admin@system.local")
+            .nickname("관리자")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(systemUser, "isSystem", true);
+    given(userRepository.findByEmail("admin@system.local")).willReturn(Optional.of(systemUser));
+
+    assertThatThrownBy(() -> authService.login(new LoginRequest("admin@system.local", "anything")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("로그인_탈퇴계정_USER_NOT_FOUND마스킹")
+  void login_inactiveUser_throwsUserNotFound() {
+    User withdrawn =
+        User.builder()
+            .email("deleted_abc@deleted.local")
+            .nickname("deleted_abc")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(withdrawn, "isActive", false);
+    given(userRepository.findByEmail("deleted_abc@deleted.local"))
+        .willReturn(Optional.of(withdrawn));
+
+    assertThatThrownBy(
+            () -> authService.login(new LoginRequest("deleted_abc@deleted.local", "anything")))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
   }
 
   @Test
@@ -450,9 +566,18 @@ class AuthServiceTest {
             .token("valid-token")
             .expiresAt(LocalDateTime.now().plusSeconds(3600))
             .build();
+    User activeUser =
+        User.builder()
+            .email("ok@example.com")
+            .nickname("유저")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(activeUser, "id", 1L);
     ReflectionTestUtils.setField(authService, "refreshTokenExpiry", 1209600000L);
 
     given(refreshTokenRepository.findByToken("valid-token")).willReturn(Optional.of(validToken));
+    given(userRepository.findById(1L)).willReturn(Optional.of(activeUser));
     given(jwtProvider.generateAccessToken(1L)).willReturn("new-access-token");
     given(jwtProvider.generateRefreshToken(1L)).willReturn("new-refresh-token");
 
@@ -462,6 +587,37 @@ class AuthServiceTest {
     assertThat(result.refreshToken()).isEqualTo("new-refresh-token");
     then(refreshTokenRepository).should().delete(validToken);
     then(refreshTokenRepository).should().save(any(RefreshToken.class));
+  }
+
+  @Test
+  @DisplayName("토큰갱신_탈퇴계정_UNAUTHORIZED_RT삭제")
+  void refresh_inactiveUser_throwsUnauthorized() {
+    RefreshToken validToken =
+        RefreshToken.builder()
+            .userId(7L)
+            .token("valid-token")
+            .expiresAt(LocalDateTime.now().plusSeconds(3600))
+            .build();
+    User withdrawn =
+        User.builder()
+            .email("deleted_xyz@deleted.local")
+            .nickname("deleted_xyz")
+            .provider(AuthProvider.LOCAL)
+            .emailVerified(true)
+            .build();
+    ReflectionTestUtils.setField(withdrawn, "id", 7L);
+    ReflectionTestUtils.setField(withdrawn, "isActive", false);
+
+    given(refreshTokenRepository.findByToken("valid-token")).willReturn(Optional.of(validToken));
+    given(userRepository.findById(7L)).willReturn(Optional.of(withdrawn));
+
+    assertThatThrownBy(() -> authService.refresh("valid-token"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.UNAUTHORIZED);
+
+    then(refreshTokenRepository).should().delete(validToken);
+    then(refreshTokenRepository).should(never()).save(any(RefreshToken.class));
   }
 
   // ============ Logout Tests ============

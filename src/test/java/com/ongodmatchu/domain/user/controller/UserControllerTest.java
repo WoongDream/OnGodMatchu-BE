@@ -24,11 +24,14 @@ import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
+import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
+import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.service.UserService;
+import com.ongodmatchu.domain.user.service.WithdrawalCodeService;
 import com.ongodmatchu.infra.s3.PresignedUrlRequest;
 import com.ongodmatchu.infra.s3.PresignedUrlResponse;
 import java.time.OffsetDateTime;
@@ -64,6 +67,7 @@ class UserControllerTest {
   @MockitoBean private UserService userService;
   @MockitoBean private QuizService quizService;
   @MockitoBean private QuizAttemptService quizAttemptService;
+  @MockitoBean private WithdrawalCodeService withdrawalCodeService;
   @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
   private User testUser;
@@ -82,6 +86,9 @@ class UserControllerTest {
     ReflectionTestUtils.setField(testUser, "id", 1L);
     ReflectionTestUtils.setField(
         testUser, "publicId", UUID.fromString("00000000-0000-0000-0000-000000000001"));
+    // 약관 동의 인터셉터 통과를 위해 현재 버전으로 셋업
+    ReflectionTestUtils.setField(testUser, "termsVersion", "1.0");
+    ReflectionTestUtils.setField(testUser, "privacyVersion", "1.0");
 
     CustomUserDetails userDetails = new CustomUserDetails(testUser);
     Authentication auth = new UsernamePasswordAuthenticationToken(userDetails, null, List.of());
@@ -97,7 +104,8 @@ class UserControllerTest {
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,
             true,
-            "LOCAL");
+            "LOCAL",
+            false);
   }
 
   @AfterEach
@@ -177,7 +185,8 @@ class UserControllerTest {
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             10L,
             true,
-            "LOCAL");
+            "LOCAL",
+            false);
     given(userService.getProfile(eq(publicId), eq(null))).willReturn(anonResponse);
 
     // SecurityContext 비워서 비로그인 시뮬레이션
@@ -205,7 +214,8 @@ class UserControllerTest {
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,
             true,
-            "LOCAL");
+            "LOCAL",
+            false);
     given(userService.updateMe(eq(1L), any(UserUpdateRequest.class))).willReturn(updated);
 
     mockMvc
@@ -228,6 +238,36 @@ class UserControllerTest {
         .perform(patch("/api/users/me").contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false));
+  }
+
+  // ============ POST /api/users/me/terms-agreement ============
+
+  @Test
+  @DisplayName("agreeToTerms_본문있음_200_서비스위임")
+  void agreeToTerms_withBody_returns200() throws Exception {
+    willDoNothing()
+        .given(userService)
+        .agreeToCurrentTerms(eq(1L), any(TermsAgreementRequest.class));
+    String body = objectMapper.writeValueAsString(new TermsAgreementRequest(true));
+
+    mockMvc
+        .perform(
+            post("/api/users/me/terms-agreement")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  @DisplayName("agreeToTerms_본문없음_200_서비스위임")
+  void agreeToTerms_noBody_returns200() throws Exception {
+    willDoNothing().given(userService).agreeToCurrentTerms(eq(1L), any());
+
+    mockMvc
+        .perform(post("/api/users/me/terms-agreement"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
   }
 
   // ============ PATCH /api/users/me/password ============
@@ -269,6 +309,48 @@ class UserControllerTest {
             patch("/api/users/me/password").contentType(MediaType.APPLICATION_JSON).content(body))
         .andExpect(status().isBadRequest())
         .andExpect(jsonPath("$.success").value(false));
+  }
+
+  // ============ DELETE /api/users/me (회원탈퇴) ============
+
+  @Test
+  @DisplayName("withdrawalCode_정상_200반환_서비스위임")
+  void requestWithdrawalCode_returns200() throws Exception {
+    willDoNothing().given(withdrawalCodeService).sendCode(eq(1L), anyString());
+
+    mockMvc
+        .perform(post("/api/users/me/withdrawal-code"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  @DisplayName("withdraw_정상_200반환_새페이로드")
+  void withdraw_returns200() throws Exception {
+    WithdrawRequest request = new WithdrawRequest("123456", "탈퇴하겠습니다.", false, "시간이 부족해서요");
+    willDoNothing().given(userService).withdraw(eq(1L), any(WithdrawRequest.class));
+
+    mockMvc
+        .perform(
+            delete("/api/users/me")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+  }
+
+  @Test
+  @DisplayName("withdraw_deleteOwnQuizzes_true_200반환")
+  void withdraw_deleteOwnQuizzes_returns200() throws Exception {
+    WithdrawRequest request = new WithdrawRequest("123456", "탈퇴하겠습니다.", true, null);
+    willDoNothing().given(userService).withdraw(eq(1L), any(WithdrawRequest.class));
+
+    mockMvc
+        .perform(
+            delete("/api/users/me")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+        .andExpect(status().isOk());
   }
 
   // ============ POST /api/users/me/profile-image ============
@@ -359,7 +441,8 @@ class UserControllerTest {
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,
             true,
-            "LOCAL");
+            "LOCAL",
+            false);
     given(userService.deleteProfileImage(1L)).willReturn(responseAfterDelete);
 
     mockMvc

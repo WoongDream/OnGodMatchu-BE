@@ -57,6 +57,24 @@ public class User extends BaseTimeEntity {
 
   private LocalDateTime lastActiveAt;
 
+  @Column(nullable = false)
+  private boolean isActive = true;
+
+  /** 시스템(관리자) 계정 표시 — 탈퇴 사용자의 퀴즈 작성자 이전 대상. 인증/로그인 차단 대상이기도 함. */
+  @Column(nullable = false)
+  private boolean isSystem = false;
+
+  private LocalDateTime deletedAt;
+
+  private String termsVersion;
+
+  private String privacyVersion;
+
+  @Column(nullable = false)
+  private boolean marketingAgreed = false;
+
+  private LocalDateTime termsAgreedAt;
+
   @Builder
   private User(
       String email,
@@ -72,6 +90,7 @@ public class User extends BaseTimeEntity {
     this.providerId = providerId;
     this.emailVerified = emailVerified;
     this.isProfilePublic = true;
+    this.isActive = true;
   }
 
   @PrePersist
@@ -111,5 +130,24 @@ public class User extends BaseTimeEntity {
 
   public void touchLastActiveAt() {
     this.lastActiveAt = LocalDateTime.now();
+  }
+
+  /** 가입 시점 약관 동의 기록. 재동의 플로우는 후속 작업. */
+  public void agreeToTerms(String termsVersion, String privacyVersion, boolean marketingAgreed) {
+    this.termsVersion = termsVersion;
+    this.privacyVersion = privacyVersion;
+    this.marketingAgreed = marketingAgreed;
+    this.termsAgreedAt = LocalDateTime.now();
+  }
+
+  public void withdraw(String anonymizedEmail, String anonymizedNickname) {
+    this.email = anonymizedEmail;
+    this.nickname = anonymizedNickname;
+    this.password = null;
+    this.bio = null;
+    this.profileImageKey = null;
+    this.isProfilePublic = false;
+    this.isActive = false;
+    this.deletedAt = LocalDateTime.now();
   }
 }

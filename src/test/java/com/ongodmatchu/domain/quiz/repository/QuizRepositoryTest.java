@@ -8,6 +8,7 @@ import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
+import jakarta.persistence.EntityManager;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ class QuizRepositoryTest {
   @Autowired private QuizRepository quizRepository;
   @Autowired private QuestionRepository questionRepository;
   @Autowired private UserRepository userRepository;
+  @Autowired private EntityManager em;
 
   private User savedUser() {
     return userRepository.save(
@@ -107,5 +109,44 @@ class QuizRepositoryTest {
   void userPublicIdAssigned() {
     User user = savedUser();
     assertThat(user.getPublicId()).isNotNull();
+  }
+
+  /**
+   * 회원탈퇴 회귀 가드 — `transferOwnership` 의 @Modifying 이 영속 컨텍스트를 clear 하면 호출자가 미리 로드한 User 인스턴스까지
+   * detach 되어 `user.withdraw(...)` dirty checking 이 무시되고 users 행 UPDATE 가 누락됨 (실제 운영 버그). 본 테스트는
+   * transferOwnership 호출 후에도 사전 로드한 user 가 영속 상태를 유지하며 필드 변경이 DB 에 반영되는지 검증.
+   */
+  @Test
+  @DisplayName("transferOwnership 호출 후에도 사전 로드한 user dirty checking 이 반영된다")
+  void transferOwnership_keepsExternallyLoadedUserManaged() {
+    User owner = savedUser();
+    User admin =
+        userRepository.save(
+            User.builder()
+                .email("transfer-admin@test.local")
+                .nickname("이전관리자")
+                .provider(AuthProvider.LOCAL)
+                .emailVerified(true)
+                .build());
+    Quiz quiz = Quiz.builder().user(owner).title("이전 대상").category("general").build();
+    quizRepository.save(quiz);
+
+    em.flush();
+    em.clear();
+
+    User reloaded = userRepository.findById(owner.getId()).orElseThrow();
+    assertThat(em.contains(reloaded)).isTrue();
+
+    int moved = quizRepository.transferOwnership(owner.getId(), admin.getId());
+    assertThat(moved).isEqualTo(1);
+
+    assertThat(em.contains(reloaded)).as("transferOwnership 호출이 영속 컨텍스트를 clear 하면 안 된다").isTrue();
+
+    reloaded.updateNickname("탈퇴익명");
+    em.flush();
+    em.clear();
+
+    User refound = userRepository.findById(owner.getId()).orElseThrow();
+    assertThat(refound.getNickname()).isEqualTo("탈퇴익명");
   }
 }

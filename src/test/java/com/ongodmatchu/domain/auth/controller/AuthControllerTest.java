@@ -107,14 +107,15 @@ class AuthControllerTest {
                 java.time.OffsetDateTime.now(),
                 0L,
                 true,
-                "LOCAL"),
+                "LOCAL",
+                false),
             "AT",
             "RT");
     given(authService.signup(any(SignupRequest.class))).willReturn(response);
 
     String body =
         objectMapper.writeValueAsString(
-            new SignupRequest("u@example.com", "닉네임", "password123", "123456"));
+            new SignupRequest("u@example.com", "닉네임", "password123", "123456", true, true, false));
 
     mockMvc
         .perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).content(body))
@@ -143,7 +144,7 @@ class AuthControllerTest {
   void signup_invalidCodeFormat_returns400() throws Exception {
     String body =
         objectMapper.writeValueAsString(
-            new SignupRequest("u@example.com", "닉네임", "password123", "abc"));
+            new SignupRequest("u@example.com", "닉네임", "password123", "abc", true, true, false));
 
     mockMvc
         .perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).content(body))

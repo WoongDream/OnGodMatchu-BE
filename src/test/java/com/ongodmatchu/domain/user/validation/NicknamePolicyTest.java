@@ -130,6 +130,33 @@ class NicknamePolicyTest {
         .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
   }
 
+  // ============ enforce — reserved (사칭 차단) ============
+
+  @Test
+  @DisplayName("enforce_관리자_RESERVED차단")
+  void enforce_reservedAdmin_throws() {
+    assertThatThrownBy(() -> nicknamePolicy.enforce("관리자"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
+  }
+
+  @Test
+  @DisplayName("enforce_탈퇴한사용자_공백제거형_RESERVED차단")
+  void enforce_reservedWithdrawnNoSpace_throws() {
+    assertThatThrownBy(() -> nicknamePolicy.enforce("탈퇴한사용자"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
+  }
+
+  @Test
+  @DisplayName("isValid_RESERVED닉네임_false반환")
+  void isValid_reserved_returnsFalse() {
+    assertThat(nicknamePolicy.isValid("관리자")).isFalse();
+    assertThat(nicknamePolicy.isValid("탈퇴한사용자")).isFalse();
+  }
+
   // ============ isValid — sanity check ============
 
   @Test

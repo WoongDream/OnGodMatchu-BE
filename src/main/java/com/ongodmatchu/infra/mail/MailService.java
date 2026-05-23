@@ -30,4 +30,18 @@ public class MailService {
       log.warn("[MailService] 메일 발송 실패 — to: {}, 원인: {}", to, e.getMessage(), e);
     }
   }
+
+  public void sendWithdrawalCode(String to, String code) {
+    try {
+      SimpleMailMessage message = new SimpleMailMessage();
+      message.setFrom(fromAddress);
+      message.setTo(to);
+      message.setSubject("[OnGodMatchu] 회원탈퇴 인증 코드");
+      message.setText("회원탈퇴 인증 코드: " + code + "\n\n5분 이내에 입력해주세요.\n탈퇴를 신청하지 않으셨다면 이 메일을 무시해도 됩니다.");
+      mailSender.send(message);
+      log.info("[MailService] 탈퇴 메일 발송 성공 — to: {}", to);
+    } catch (Exception e) {
+      log.warn("[MailService] 탈퇴 메일 발송 실패 — to: {}, 원인: {}", to, e.getMessage(), e);
+    }
+  }
 }
