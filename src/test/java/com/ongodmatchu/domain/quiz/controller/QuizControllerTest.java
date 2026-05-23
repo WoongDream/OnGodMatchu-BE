@@ -67,6 +67,8 @@ class QuizControllerTest {
     ReflectionTestUtils.setField(testUser, "id", 1L);
     ReflectionTestUtils.setField(
         testUser, "publicId", UUID.fromString("00000000-0000-0000-0000-000000000001"));
+    ReflectionTestUtils.setField(testUser, "termsVersion", "1.0");
+    ReflectionTestUtils.setField(testUser, "privacyVersion", "1.0");
 
     CustomUserDetails userDetails = new CustomUserDetails(testUser);
     Authentication auth = new UsernamePasswordAuthenticationToken(userDetails, null, List.of());

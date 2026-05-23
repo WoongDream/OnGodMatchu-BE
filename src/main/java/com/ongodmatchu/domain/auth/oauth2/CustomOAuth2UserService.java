@@ -48,6 +48,8 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
   }
 
   private User registerUser(OAuth2UserInfo userInfo, String registrationId) {
+    // 약관 동의는 콜백 시점에 알 수 없어 NULL 로 저장. FE 가 needsTermsAgreement 보고
+    // /api/users/me/terms-agreement 로 동의 처리. 미동의 상태는 TermsAgreementInterceptor 가 가드.
     User user =
         userRepository.saveAndFlush(
             User.builder()

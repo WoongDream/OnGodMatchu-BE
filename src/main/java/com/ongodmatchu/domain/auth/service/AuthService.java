@@ -12,6 +12,7 @@ import com.ongodmatchu.domain.auth.ratelimit.VerificationCodeRateLimiter;
 import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
+import com.ongodmatchu.domain.auth.validation.TermsPolicy;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -62,7 +63,7 @@ public class AuthService {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
     }
 
-    rateLimiter.check(email, ipAddress);
+    rateLimiter.check(email, ipAddress, "signup");
 
     String code = generateCode();
     emailVerificationRepository.deleteByEmail(email);
@@ -77,6 +78,10 @@ public class AuthService {
 
   @Transactional
   public SignupResponse signup(SignupRequest request) {
+    TermsPolicy.enforceRequired(
+        Boolean.TRUE.equals(request.agreedToTerms()),
+        Boolean.TRUE.equals(request.agreedToPrivacy()));
+
     if (userRepository.existsByEmail(request.email())) {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
     }
@@ -108,6 +113,10 @@ public class AuthService {
             .provider(AuthProvider.LOCAL)
             .emailVerified(true)
             .build();
+    user.agreeToTerms(
+        TermsPolicy.CURRENT_TERMS_VERSION,
+        TermsPolicy.CURRENT_PRIVACY_VERSION,
+        request.marketingOptIn());
     try {
       userRepository.saveAndFlush(user);
     } catch (DataIntegrityViolationException e) {
@@ -149,10 +158,15 @@ public class AuthService {
             .findByEmail(request.email())
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
+    if (user.isSystem() || !user.isActive()) {
+      // 시스템 계정/탈퇴 계정은 로그인 차단 — 존재 자체를 노출하지 않도록 USER_NOT_FOUND 로 매핑.
+      throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+    }
     if (user.getProvider() != AuthProvider.LOCAL) {
       throw new BusinessException(ErrorCode.SOCIAL_USER_PASSWORD_LOGIN);
     }
-    if (!passwordEncoder.matches(request.password(), user.getPassword())) {
+    if (user.getPassword() == null
+        || !passwordEncoder.matches(request.password(), user.getPassword())) {
       throw new BusinessException(ErrorCode.INVALID_PASSWORD);
     }
     if (!user.isEmailVerified()) {
@@ -172,6 +186,15 @@ public class AuthService {
     if (refreshToken.isExpired()) {
       refreshTokenRepository.delete(refreshToken);
       throw new BusinessException(ErrorCode.TOKEN_EXPIRED);
+    }
+
+    User user =
+        userRepository
+            .findById(refreshToken.getUserId())
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    if (user.isSystem() || !user.isActive()) {
+      refreshTokenRepository.delete(refreshToken);
+      throw new BusinessException(ErrorCode.UNAUTHORIZED);
     }
 
     refreshTokenRepository.delete(refreshToken);

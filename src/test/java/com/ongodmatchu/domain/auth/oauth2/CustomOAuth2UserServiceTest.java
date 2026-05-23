@@ -148,6 +148,10 @@ class CustomOAuth2UserServiceTest {
     assertThat(captured.getEmail()).isEqualTo("google@example.com");
     assertThat(captured.getProvider()).isEqualTo(AuthProvider.GOOGLE);
     assertThat(captured.isEmailVerified()).isTrue();
+    // OAuth 첫 가입은 약관 동의 정보 없이 저장 — FE 가 needsTermsAgreement 보고 동의 처리.
+    assertThat(captured.getTermsVersion()).isNull();
+    assertThat(captured.getPrivacyVersion()).isNull();
+    assertThat(captured.getTermsAgreedAt()).isNull();
 
     then(profileImageInitializer).should().initialize(savedUser);
   }

@@ -1,5 +1,6 @@
 package com.ongodmatchu.domain.user.dto;
 
+import com.ongodmatchu.domain.auth.validation.TermsPolicy;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.global.util.TimeFormat;
 import java.time.OffsetDateTime;
@@ -14,7 +15,8 @@ public record UserResponse(
     OffsetDateTime createdAt,
     long activeDays,
     boolean isProfilePublic,
-    String provider) {
+    String provider,
+    boolean needsTermsAgreement) {
 
   public static UserResponse from(User user, String profileImageUrl, long activeDays) {
     return new UserResponse(
@@ -26,6 +28,7 @@ public record UserResponse(
         TimeFormat.toResponse(user.getCreatedAt()),
         activeDays,
         user.isProfilePublic(),
-        user.getProvider().name());
+        user.getProvider().name(),
+        TermsPolicy.needsAgreement(user.getTermsVersion(), user.getPrivacyVersion()));
   }
 }

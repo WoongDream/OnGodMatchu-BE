@@ -30,6 +30,10 @@ public enum ErrorCode {
   OAUTH_USER_NO_PASSWORD(
       HttpStatus.BAD_REQUEST, "OAUTH_USER_NO_PASSWORD", "소셜 로그인 계정은 비밀번호 변경을 사용할 수 없습니다."),
   INVALID_BIO_FORMAT(HttpStatus.BAD_REQUEST, "INVALID_BIO_FORMAT", "한 줄 소개 형식이 올바르지 않습니다."),
+  INVALID_WITHDRAWAL_CONFIRMATION(
+      HttpStatus.BAD_REQUEST, "INVALID_WITHDRAWAL_CONFIRMATION", "탈퇴 확인 문구가 올바르지 않습니다."),
+  TERMS_AGREEMENT_REQUIRED(HttpStatus.BAD_REQUEST, "TERMS_AGREEMENT_REQUIRED", "필수 약관에 동의해야 합니다."),
+  TERMS_AGREEMENT_OUTDATED(HttpStatus.FORBIDDEN, "TERMS_AGREEMENT_OUTDATED", "약관 동의가 필요합니다."),
 
   // Email verification
   INVALID_VERIFICATION_CODE(

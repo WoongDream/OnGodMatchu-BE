@@ -10,14 +10,18 @@ import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.ProfileStatsResponse;
+import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
+import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.service.UserService;
+import com.ongodmatchu.domain.user.service.WithdrawalCodeService;
 import com.ongodmatchu.global.response.ApiResponse;
 import com.ongodmatchu.infra.s3.PresignedUrlRequest;
 import com.ongodmatchu.infra.s3.PresignedUrlResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -47,6 +51,7 @@ public class UserController {
   private final UserService userService;
   private final QuizService quizService;
   private final QuizAttemptService quizAttemptService;
+  private final WithdrawalCodeService withdrawalCodeService;
 
   @Operation(summary = "내 정보 조회", description = "본인 전용. profileImageUrl 은 항상 non-null 보장")
   @GetMapping("/me")
@@ -77,6 +82,41 @@ public class UserController {
       @Valid @RequestBody UserUpdateRequest request) {
     UserResponse response = userService.updateMe(userDetails.getUser().getId(), request);
     return ResponseEntity.ok(ApiResponse.ok(response));
+  }
+
+  @Operation(
+      summary = "회원탈퇴 인증 코드 발송",
+      description =
+          "본인 가입 이메일로 6자리 코드 발송 (5분 유효). 발송마다 이전 미소비 코드는 폐기. Rate limit: 이메일 60s 쿨다운 / 1h 5회 / IP 1h 10회 (가입 코드와 카운터 분리). 초과 시 429 RATE_LIMITED + Retry-After.")
+  @PostMapping("/me/withdrawal-code")
+  public ResponseEntity<ApiResponse<Void>> requestWithdrawalCode(
+      @AuthenticationPrincipal CustomUserDetails userDetails, HttpServletRequest httpRequest) {
+    withdrawalCodeService.sendCode(userDetails.getUser().getId(), httpRequest.getRemoteAddr());
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  @Operation(
+      summary = "회원탈퇴 (soft delete)",
+      description =
+          "사전에 /me/withdrawal-code 로 받은 코드 + \"탈퇴하겠습니다.\" 문구 필수. deleteOwnQuizzes=true 면 본인 퀴즈+질문/시도/스타/댓글 일괄 삭제, false(default) 면 작성자를 시스템 관리자 계정으로 이전. reasonText 는 익명 통계 저장. 처리: isActive=false + deletedAt + email/nickname 익명화 + RT 전체 무효화 + 프로필 이미지 best-effort 삭제. 가능 에러: INVALID_VERIFICATION_CODE/VERIFICATION_CODE_EXPIRED(400), INVALID_WITHDRAWAL_CONFIRMATION(400).")
+  @DeleteMapping("/me")
+  public ResponseEntity<ApiResponse<Void>> withdraw(
+      @AuthenticationPrincipal CustomUserDetails userDetails,
+      @RequestBody(required = false) WithdrawRequest request) {
+    userService.withdraw(userDetails.getUser().getId(), request);
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  @Operation(
+      summary = "약관 동의 처리",
+      description =
+          "현재 버전 이용약관/개인정보처리방침 동의 처리. 호출 자체로 필수 약관 동의 간주. agreedToMarketing 은 옵셔널. OAuth 첫 가입자나 약관 변경 후 재동의 시 사용. 가능 에러: 없음 (idempotent)")
+  @PostMapping("/me/terms-agreement")
+  public ResponseEntity<ApiResponse<Void>> agreeToTerms(
+      @AuthenticationPrincipal CustomUserDetails userDetails,
+      @RequestBody(required = false) TermsAgreementRequest request) {
+    userService.agreeToCurrentTerms(userDetails.getUser().getId(), request);
+    return ResponseEntity.ok(ApiResponse.ok());
   }
 
   @Operation(

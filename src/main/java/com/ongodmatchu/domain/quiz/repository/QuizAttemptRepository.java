@@ -9,10 +9,14 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> {
 
   Page<QuizAttempt> findByUserIdOrderByCompletedAtDesc(Long userId, Pageable pageable);
+
+  @Transactional
+  void deleteByQuizIdIn(Collection<Long> quizIds);
 
   /**
    * 본인 소유 퀴즈에 대한 attempts 중 KST 이번주(월요일 00:00 ~ now) 시도 수. 호출자는 KST 월요일 0시 시각을 LocalDateTime 으로 직접

@@ -13,6 +13,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 
+import com.ongodmatchu.domain.comment.repository.QuizCommentRepository;
 import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
@@ -64,6 +65,7 @@ class QuizServiceTest {
   @Mock private UserRepository userRepository;
   @Mock private QuizStarRepository quizStarRepository;
   @Mock private QuizAttemptRepository quizAttemptRepository;
+  @Mock private QuizCommentRepository quizCommentRepository;
   @Mock private S3Service s3Service;
 
   @BeforeEach
@@ -1229,5 +1231,67 @@ class QuizServiceTest {
     quizService.deleteQuiz(1L, 1L);
 
     then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  // ============ deleteAllByUserId / transferOwnershipToAdmin ============
+
+  @Test
+  @DisplayName("deleteAllByUserId_본인퀴즈없음_no_op")
+  void deleteAllByUserId_noQuizzes_noOp() {
+    given(quizRepository.findAllByUserId(1L)).willReturn(List.of());
+
+    quizService.deleteAllByUserId(1L);
+
+    then(questionRepository).should(never()).deleteByQuizIdIn(any());
+    then(quizCommentRepository).should(never()).deleteByQuizIdIn(any());
+    then(quizAttemptRepository).should(never()).deleteByQuizIdIn(any());
+    then(quizStarRepository).should(never()).deleteByQuizIdIn(any());
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("deleteAllByUserId_본인퀴즈있음_연관일괄삭제_S3정리")
+  void deleteAllByUserId_withQuizzes_cascadesAndCleansS3() {
+    User user = testUser();
+    Quiz quiz1 = testQuiz(user);
+    ReflectionTestUtils.setField(quiz1, "id", 10L);
+    quiz1.updateThumbnailKey("quiz-images/uuid/thumb1.jpg");
+    Quiz quiz2 = testQuiz(user);
+    ReflectionTestUtils.setField(quiz2, "id", 11L);
+    quiz2.updateThumbnailKey(null);
+    given(quizRepository.findAllByUserId(1L)).willReturn(List.of(quiz1, quiz2));
+
+    Question q1 =
+        Question.builder()
+            .quiz(quiz1)
+            .orderNum(1)
+            .imageKey("quiz-images/uuid/q1.jpg")
+            .answerImageKey("quiz-images/uuid/a1.jpg")
+            .questionText(null)
+            .answer("정답")
+            .build();
+    given(questionRepository.findByQuizIdIn(List.of(10L, 11L))).willReturn(List.of(q1));
+
+    quizService.deleteAllByUserId(1L);
+
+    then(quizCommentRepository).should().deleteByQuizIdIn(List.of(10L, 11L));
+    then(quizAttemptRepository).should().deleteByQuizIdIn(List.of(10L, 11L));
+    then(quizStarRepository).should().deleteByQuizIdIn(List.of(10L, 11L));
+    then(questionRepository).should().deleteByQuizIdIn(List.of(10L, 11L));
+    then(quizRepository).should().deleteAllInBatch(List.of(quiz1, quiz2));
+    then(s3Service).should().deleteQuietly("quiz-images/uuid/thumb1.jpg");
+    then(s3Service).should().deleteQuietly("quiz-images/uuid/q1.jpg");
+    then(s3Service).should().deleteQuietly("quiz-images/uuid/a1.jpg");
+  }
+
+  @Test
+  @DisplayName("transferOwnershipToAdmin_repository_위임")
+  void transferOwnershipToAdmin_delegates() {
+    given(quizRepository.transferOwnership(1L, 999L)).willReturn(3);
+
+    int affected = quizService.transferOwnershipToAdmin(1L, 999L);
+
+    assertThat(affected).isEqualTo(3);
+    then(quizRepository).should().transferOwnership(1L, 999L);
   }
 }

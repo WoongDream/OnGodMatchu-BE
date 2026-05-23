@@ -1,5 +1,6 @@
 package com.ongodmatchu.domain.quiz.service;
 
+import com.ongodmatchu.domain.comment.repository.QuizCommentRepository;
 import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
@@ -54,6 +55,7 @@ public class QuizService {
   private final UserRepository userRepository;
   private final QuizStarRepository quizStarRepository;
   private final QuizAttemptRepository quizAttemptRepository;
+  private final QuizCommentRepository quizCommentRepository;
   private final S3Service s3Service;
 
   public List<CategoryResponse> getCategories() {
@@ -369,6 +371,42 @@ public class QuizService {
         s3Service.deleteQuietly(q.getAnswerImageKey());
       }
     }
+  }
+
+  /**
+   * 회원탈퇴 시 본인이 만든 퀴즈와 모든 연관 데이터(질문/시도/스타/댓글)를 일괄 삭제하고 S3 키도 best-effort 정리한다. 단건 삭제와 동일한 의미를 일괄로
+   * 처리.
+   */
+  @Transactional
+  public void deleteAllByUserId(Long userId) {
+    List<Quiz> quizzes = quizRepository.findAllByUserId(userId);
+    if (quizzes.isEmpty()) {
+      return;
+    }
+    List<Long> quizIds = quizzes.stream().map(Quiz::getId).toList();
+    List<Question> questions = questionRepository.findByQuizIdIn(quizIds);
+
+    quizCommentRepository.deleteByQuizIdIn(quizIds);
+    quizAttemptRepository.deleteByQuizIdIn(quizIds);
+    quizStarRepository.deleteByQuizIdIn(quizIds);
+    questionRepository.deleteByQuizIdIn(quizIds);
+    quizRepository.deleteAllInBatch(quizzes);
+
+    for (Quiz q : quizzes) {
+      if (q.getThumbnailKey() != null) s3Service.deleteQuietly(q.getThumbnailKey());
+    }
+    for (Question q : questions) {
+      if (q.getImageKey() != null) s3Service.deleteQuietly(q.getImageKey());
+      if (q.getAnswerImageKey() != null && !q.getAnswerImageKey().equals(q.getImageKey())) {
+        s3Service.deleteQuietly(q.getAnswerImageKey());
+      }
+    }
+  }
+
+  /** 회원탈퇴 시 본인 퀴즈 작성자를 시스템 관리자 계정으로 일괄 이전. 변경된 행 수를 반환한다. */
+  @Transactional
+  public int transferOwnershipToAdmin(Long fromUserId, Long adminUserId) {
+    return quizRepository.transferOwnership(fromUserId, adminUserId);
   }
 
   private Quiz findQuizOwned(Long userId, Long quizId) {
