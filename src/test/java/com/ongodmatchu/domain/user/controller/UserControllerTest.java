@@ -243,11 +243,10 @@ class UserControllerTest {
   // ============ POST /api/users/me/terms-agreement ============
 
   @Test
-  @DisplayName("agreeToTerms_본문있음_200_서비스위임")
-  void agreeToTerms_withBody_returns200() throws Exception {
-    willDoNothing()
-        .given(userService)
-        .agreeToCurrentTerms(eq(1L), any(TermsAgreementRequest.class));
+  @DisplayName("agreeToTerms_본문있음_200_갱신UserResponse반환")
+  void agreeToTerms_withBody_returns200WithUserResponse() throws Exception {
+    given(userService.agreeToCurrentTerms(eq(1L), any(TermsAgreementRequest.class)))
+        .willReturn(sampleUserResponse);
     String body = objectMapper.writeValueAsString(new TermsAgreementRequest(true));
 
     mockMvc
@@ -256,18 +255,21 @@ class UserControllerTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(body))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true));
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nickname").value("테스트유저"))
+        .andExpect(jsonPath("$.data.needsTermsAgreement").value(false));
   }
 
   @Test
-  @DisplayName("agreeToTerms_본문없음_200_서비스위임")
-  void agreeToTerms_noBody_returns200() throws Exception {
-    willDoNothing().given(userService).agreeToCurrentTerms(eq(1L), any());
+  @DisplayName("agreeToTerms_본문없음_200_갱신UserResponse반환")
+  void agreeToTerms_noBody_returns200WithUserResponse() throws Exception {
+    given(userService.agreeToCurrentTerms(eq(1L), any())).willReturn(sampleUserResponse);
 
     mockMvc
         .perform(post("/api/users/me/terms-agreement"))
         .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true));
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.needsTermsAgreement").value(false));
   }
 
   // ============ PATCH /api/users/me/password ============

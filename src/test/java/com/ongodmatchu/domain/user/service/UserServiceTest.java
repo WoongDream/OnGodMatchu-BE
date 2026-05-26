@@ -910,17 +910,20 @@ class UserServiceTest {
   // ============ agreeToCurrentTerms ============
 
   @Test
-  @DisplayName("agreeToCurrentTerms_NULL상태에서호출_현재버전과시각기록_마케팅false")
+  @DisplayName("agreeToCurrentTerms_NULL상태에서호출_현재버전과시각기록_마케팅false_갱신UserResponse반환")
   void agreeToCurrentTerms_recordsCurrentVersion() {
     User user = buildLocalUser(1L, "유저");
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
 
-    userService.agreeToCurrentTerms(1L, new TermsAgreementRequest(false));
+    UserResponse result = userService.agreeToCurrentTerms(1L, new TermsAgreementRequest(false));
 
     assertThat(user.getTermsVersion()).isEqualTo("1.0");
     assertThat(user.getPrivacyVersion()).isEqualTo("1.0");
     assertThat(user.isMarketingAgreed()).isFalse();
     assertThat(user.getTermsAgreedAt()).isNotNull();
+    assertThat(result.needsTermsAgreement()).isFalse();
+    assertThat(result.nickname()).isEqualTo("유저");
+    assertThat(result.profileImageUrl()).isEqualTo(DEFAULT_IMAGE_URL);
   }
 
   @Test
@@ -929,11 +932,12 @@ class UserServiceTest {
     User user = buildLocalUser(1L, "유저");
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
 
-    userService.agreeToCurrentTerms(1L, null);
+    UserResponse result = userService.agreeToCurrentTerms(1L, null);
 
     assertThat(user.getTermsVersion()).isEqualTo("1.0");
     assertThat(user.isMarketingAgreed()).isFalse();
     assertThat(user.getTermsAgreedAt()).isNotNull();
+    assertThat(result.needsTermsAgreement()).isFalse();
   }
 
   @Test
@@ -942,9 +946,10 @@ class UserServiceTest {
     User user = buildLocalUser(1L, "유저");
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
 
-    userService.agreeToCurrentTerms(1L, new TermsAgreementRequest(true));
+    UserResponse result = userService.agreeToCurrentTerms(1L, new TermsAgreementRequest(true));
 
     assertThat(user.isMarketingAgreed()).isTrue();
+    assertThat(result.needsTermsAgreement()).isFalse();
   }
 
   @Test
