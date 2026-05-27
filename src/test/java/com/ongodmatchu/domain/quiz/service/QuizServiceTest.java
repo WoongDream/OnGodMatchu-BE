@@ -19,6 +19,7 @@ import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
+import com.ongodmatchu.domain.quiz.dto.QuestionUpdateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
@@ -38,6 +39,7 @@ import com.ongodmatchu.global.exception.ErrorCode;
 import com.ongodmatchu.infra.s3.S3Service;
 import com.ongodmatchu.infra.s3.ViewUrlResponse;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -930,7 +932,7 @@ class QuizServiceTest {
     assertThatThrownBy(
             () ->
                 quizService.updateQuiz(
-                    1L, 99L, new QuizUpdateRequest(null, null, null, null, null)))
+                    1L, 99L, new QuizUpdateRequest(null, null, null, null, null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
@@ -946,7 +948,7 @@ class QuizServiceTest {
     assertThatThrownBy(
             () ->
                 quizService.updateQuiz(
-                    999L, 1L, new QuizUpdateRequest(null, null, null, null, null)))
+                    999L, 1L, new QuizUpdateRequest(null, null, null, null, null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.QUIZ_FORBIDDEN);
@@ -960,7 +962,7 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     QuizResponse result =
-        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest("새제목", null, null, null, null));
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest("새제목", null, null, null, null, null));
 
     assertThat(result.title()).isEqualTo("새제목");
     assertThat(quiz.getTitle()).isEqualTo("새제목");
@@ -974,7 +976,7 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     QuizResponse result =
-        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, "새설명", null, null, null));
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, "새설명", null, null, null, null));
 
     assertThat(result.description()).isEqualTo("새설명");
     assertThat(quiz.getDescription()).isEqualTo("새설명");
@@ -988,7 +990,8 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     QuizResponse result =
-        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, "music", null, null));
+        quizService.updateQuiz(
+            1L, 1L, new QuizUpdateRequest(null, null, "music", null, null, null));
 
     assertThat(result.category()).isEqualTo("music");
     assertThat(quiz.getCategory()).isEqualTo("music");
@@ -1003,7 +1006,8 @@ class QuizServiceTest {
 
     assertThatThrownBy(
             () ->
-                quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, "역사", null, null)))
+                quizService.updateQuiz(
+                    1L, 1L, new QuizUpdateRequest(null, null, "역사", null, null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_CATEGORY);
@@ -1019,7 +1023,8 @@ class QuizServiceTest {
     willDoNothing().given(s3Service).verifyKeyOwnedAndCompleted(1L, "new-key.png");
     willDoNothing().given(s3Service).deleteQuietly("old-key.png");
 
-    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png", null));
+    quizService.updateQuiz(
+        1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png", null, null));
 
     then(s3Service).should().verifyKeyOwnedAndCompleted(1L, "new-key.png");
     then(s3Service).should().deleteQuietly("old-key.png");
@@ -1034,7 +1039,8 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
     willDoNothing().given(s3Service).verifyKeyOwnedAndCompleted(1L, "new-key.png");
 
-    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png", null));
+    quizService.updateQuiz(
+        1L, 1L, new QuizUpdateRequest(null, null, null, "new-key.png", null, null));
 
     then(s3Service).should().verifyKeyOwnedAndCompleted(1L, "new-key.png");
     then(s3Service).should(never()).deleteQuietly(anyString());
@@ -1048,7 +1054,8 @@ class QuizServiceTest {
     ReflectionTestUtils.setField(quiz, "thumbnailKey", "same-key.png");
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
-    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, "same-key.png", null));
+    quizService.updateQuiz(
+        1L, 1L, new QuizUpdateRequest(null, null, null, "same-key.png", null, null));
 
     then(s3Service).should(never()).verifyKeyOwnedAndCompleted(anyLong(), anyString());
     then(s3Service).should(never()).deleteQuietly(anyString());
@@ -1064,7 +1071,7 @@ class QuizServiceTest {
 
     QuizResponse result =
         quizService.updateQuiz(
-            1L, 1L, new QuizUpdateRequest(null, null, null, null, QuizVisibility.PUBLIC));
+            1L, 1L, new QuizUpdateRequest(null, null, null, null, QuizVisibility.PUBLIC, null));
 
     assertThat(result.visibility()).isEqualTo(QuizVisibility.PUBLIC);
     assertThat(quiz.getVisibility()).isEqualTo(QuizVisibility.PUBLIC);
@@ -1079,7 +1086,7 @@ class QuizServiceTest {
 
     QuizResponse result =
         quizService.updateQuiz(
-            1L, 1L, new QuizUpdateRequest(null, null, null, null, QuizVisibility.PRIVATE));
+            1L, 1L, new QuizUpdateRequest(null, null, null, null, QuizVisibility.PRIVATE, null));
 
     assertThat(result.visibility()).isEqualTo(QuizVisibility.PRIVATE);
     assertThat(quiz.getVisibility()).isEqualTo(QuizVisibility.PRIVATE);
@@ -1093,12 +1100,342 @@ class QuizServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     QuizResponse result =
-        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, null, null));
+        quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, null, null, null));
 
     assertThat(result.title()).isEqualTo("퀴즈 제목");
     assertThat(result.category()).isEqualTo("game");
     then(s3Service).should(never()).verifyKeyOwnedAndCompleted(anyLong(), anyString());
     then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  // ============ updateQuiz — questions diff ============
+
+  private Question testQuestion(Quiz quiz, long id, int orderNum, String imageKey, String text) {
+    Question q =
+        Question.builder()
+            .quiz(quiz)
+            .orderNum(orderNum)
+            .imageKey(imageKey)
+            .answerImageKey(null)
+            .questionText(text)
+            .answer("ans" + id)
+            .build();
+    ReflectionTestUtils.setField(q, "id", id);
+    return q;
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_null이면_questions미수정")
+  void updateQuiz_questionsNull_skipsDiff() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    quizService.updateQuiz(1L, 1L, new QuizUpdateRequest(null, null, null, null, null, null));
+
+    then(questionRepository).should(never()).findByQuizIdOrderByOrderNum(anyLong());
+    then(questionRepository).should(never()).deleteAll(any());
+    then(questionRepository).should(never()).save(any());
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_기존id갱신만")
+  void updateQuiz_questions_updateExistingOnly() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question existing = testQuestion(quiz, 1L, 1, null, "원래문제");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(existing));
+
+    LocalDateTime before = LocalDateTime.now().minusSeconds(1);
+    ReflectionTestUtils.setField(quiz, "updatedAt", before);
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(1L, null, null, "수정문제", "수정정답")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    assertThat(existing.getQuestionText()).isEqualTo("수정문제");
+    assertThat(existing.getAnswer()).isEqualTo("수정정답");
+    assertThat(existing.getOrderNum()).isEqualTo(1);
+    then(questionRepository).should(never()).save(any());
+    then(questionRepository).should(never()).deleteAll(any());
+    assertThat(quiz.getUpdatedAt()).isAfterOrEqualTo(before);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_신규추가")
+  void updateQuiz_questions_insertsNew() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question existing = testQuestion(quiz, 1L, 1, null, "기존문제");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(existing));
+    given(questionRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(
+                new QuestionUpdateRequest(1L, null, null, "기존수정", "정답1"),
+                new QuestionUpdateRequest(null, null, null, "신규문제", "정답2")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    assertThat(existing.getOrderNum()).isEqualTo(1);
+    assertThat(existing.getQuestionText()).isEqualTo("기존수정");
+
+    ArgumentCaptor<Question> captor = ArgumentCaptor.forClass(Question.class);
+    then(questionRepository).should(times(1)).save(captor.capture());
+    Question saved = captor.getValue();
+    assertThat(saved.getOrderNum()).isEqualTo(2);
+    assertThat(saved.getQuestionText()).isEqualTo("신규문제");
+    assertThat(saved.getAnswer()).isEqualTo("정답2");
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_삭제")
+  void updateQuiz_questions_deletesMissing() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question q1 = testQuestion(quiz, 1L, 1, null, "q1");
+    Question q2 = testQuestion(quiz, 2L, 2, "q2.png", "q2");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q1, q2));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(1L, null, null, "q1", "ans1")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    ArgumentCaptor<List<Question>> captor = ArgumentCaptor.forClass(List.class);
+    then(questionRepository).should().deleteAll(captor.capture());
+    assertThat(captor.getValue()).containsExactly(q2);
+    then(s3Service).should().deleteQuietly("q2.png");
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_imageKey변경시_새키verify_옛키deleteQuietly")
+  void updateQuiz_questions_imageKeyChanged_verifiesNewAndDeletesOld() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question existing = testQuestion(quiz, 1L, 1, "old.png", "q");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(existing));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(1L, "new.png", null, "q", "ans1")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    then(s3Service).should().verifyKeyOwnedAndCompleted(1L, "new.png");
+    then(s3Service).should().deleteQuietly("old.png");
+    assertThat(existing.getImageKey()).isEqualTo("new.png");
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_imageKey동일시_verify와delete둘다호출안됨")
+  void updateQuiz_questions_imageKeyUnchanged_noVerifyNoDelete() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question existing = testQuestion(quiz, 1L, 1, "same.png", "q");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(existing));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(1L, "same.png", null, "q", "ans1")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    then(s3Service).should(never()).verifyKeyOwnedAndCompleted(anyLong(), anyString());
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_answerImageKey가imageKey와같으면_verify한번만")
+  void updateQuiz_questions_answerImageKeySameAsImageKey_verifiesOnce() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question existing = testQuestion(quiz, 1L, 1, null, "q");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(existing));
+
+    String key = "shared.png";
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(1L, key, key, "q", "ans1")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    then(s3Service).should(times(1)).verifyKeyOwnedAndCompleted(1L, key);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_삭제된question의키가다른question에서재사용되면_deleteQuietly안함")
+  void updateQuiz_questions_keyReusedAfterDelete_noDelete() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question q1 = testQuestion(quiz, 1L, 1, "shared.png", "q1");
+    Question q2 = testQuestion(quiz, 2L, 2, "shared.png", "q2");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q1, q2));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(1L, "shared.png", null, "q1", "ans1")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    then(s3Service).should(never()).deleteQuietly("shared.png");
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_orderNum_payload순서대로_재할당")
+  void updateQuiz_questions_orderNumReassignedByPayloadOrder() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question q1 = testQuestion(quiz, 1L, 1, null, "q1");
+    Question q2 = testQuestion(quiz, 2L, 2, null, "q2");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q1, q2));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(
+                new QuestionUpdateRequest(2L, null, null, "q2", "ans2"),
+                new QuestionUpdateRequest(1L, null, null, "q1", "ans1")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    assertThat(q2.getOrderNum()).isEqualTo(1);
+    assertThat(q1.getOrderNum()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions_카운터보존_회귀가드")
+  void updateQuiz_questions_preservesCounters() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    ReflectionTestUtils.setField(quiz, "playCount", 10);
+    ReflectionTestUtils.setField(quiz, "starCount", 10);
+    ReflectionTestUtils.setField(quiz, "commentCount", 10);
+    ReflectionTestUtils.setField(quiz, "shareCount", 10);
+    Question existing = testQuestion(quiz, 1L, 1, null, "q");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(existing));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(1L, null, null, "수정q", "ans1")));
+
+    quizService.updateQuiz(1L, 1L, request);
+
+    assertThat(quiz.getPlayCount()).isEqualTo(10);
+    assertThat(quiz.getStarCount()).isEqualTo(10);
+    assertThat(quiz.getCommentCount()).isEqualTo(10);
+    assertThat(quiz.getShareCount()).isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_questions에_quiz소속이아닌id섞임_QUESTION_NOT_FOUND예외")
+  void updateQuiz_questions_unknownId_throwsQuestionNotFound() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question q1 = testQuestion(quiz, 1L, 1, null, "q1");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q1));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            null,
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(999L, null, null, "x", "y")));
+
+    assertThatThrownBy(() -> quizService.updateQuiz(1L, 1L, request))
+        .isInstanceOf(BusinessException.class)
+        .hasFieldOrPropertyWithValue("errorCode", ErrorCode.QUESTION_NOT_FOUND);
+
+    then(questionRepository).should(never()).deleteAll(any());
+    then(questionRepository).should(never()).save(any());
+    then(s3Service).should(never()).verifyKeyOwnedAndCompleted(anyLong(), anyString());
+    then(s3Service).should(never()).deleteQuietly(anyString());
+  }
+
+  @Test
+  @DisplayName("updateQuiz_메타와questions동시변경")
+  void updateQuiz_metaAndQuestions_bothApplied() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    Question existing = testQuestion(quiz, 1L, 1, null, "q");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(existing));
+
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(
+            "새제목",
+            null,
+            null,
+            null,
+            null,
+            List.of(new QuestionUpdateRequest(1L, null, null, "수정q", "수정ans")));
+
+    QuizResponse result = quizService.updateQuiz(1L, 1L, request);
+
+    assertThat(result.title()).isEqualTo("새제목");
+    assertThat(quiz.getTitle()).isEqualTo("새제목");
+    assertThat(existing.getQuestionText()).isEqualTo("수정q");
+    assertThat(existing.getAnswer()).isEqualTo("수정ans");
   }
 
   // ============ deleteQuiz ============

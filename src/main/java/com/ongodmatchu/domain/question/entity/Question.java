@@ -56,4 +56,13 @@ public class Question {
     this.questionText = questionText;
     this.answer = answer;
   }
+
+  public void update(
+      int orderNum, String questionText, String answer, String imageKey, String answerImageKey) {
+    this.orderNum = orderNum;
+    this.questionText = questionText;
+    this.answer = answer;
+    this.imageKey = imageKey;
+    this.answerImageKey = answerImageKey;
+  }
 }

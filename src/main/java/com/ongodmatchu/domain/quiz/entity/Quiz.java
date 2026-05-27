@@ -139,4 +139,12 @@ public class Quiz extends BaseTimeEntity {
   public void incrementShareCount() {
     this.shareCount++;
   }
+
+  /**
+   * questions 만 변경된 경우에도 updatedAt 이 갱신되도록 강제 마킹. quiz 자체 필드가 변경되지 않으면 @LastModifiedDate 가 트리거되지
+   * 않음.
+   */
+  public void touch() {
+    this.updatedAt = LocalDateTime.now();
+  }
 }

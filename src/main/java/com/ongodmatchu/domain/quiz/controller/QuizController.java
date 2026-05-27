@@ -103,9 +103,9 @@ public class QuizController {
   }
 
   @Operation(
-      summary = "퀴즈 메타 수정",
+      summary = "퀴즈 메타 + questions 수정",
       description =
-          "title/description/category/thumbnailKey/visibility 옵셔널. visibility 토글 endpoint 가 별도가 아님 — 여기서 처리. 가능 에러: QUIZ_NOT_FOUND(404), QUIZ_FORBIDDEN(403), INVALID_CATEGORY(400)")
+          "title/description/category/thumbnailKey/visibility 옵셔널. questions 도 옵셔널 — null 이면 미변경, 배열이면 id 유지 PUT diff (id 있음=기존 갱신, 없음=신규 추가, payload 에서 빠진 기존 id=삭제). orderNum 은 payload 순서로 재할당. plays/stars/comments/shares 카운터는 보존, questions 만 변경돼도 updatedAt 갱신. 가능 에러: QUIZ_NOT_FOUND(404), QUIZ_FORBIDDEN(403), INVALID_CATEGORY(400), QUESTION_NOT_FOUND(404), INVALID_UPLOAD_KEY(400), UPLOAD_VERIFICATION_FAILED(422)")
   @PatchMapping("/{quizId}")
   public ResponseEntity<ApiResponse<QuizResponse>> updateQuiz(
       @PathVariable Long quizId,

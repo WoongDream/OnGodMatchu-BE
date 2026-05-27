@@ -104,7 +104,7 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_정상요청_200_QuizResponse반환")
   void updateQuiz_validRequest_returns200WithQuizResponse() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", "새 설명", "music", null, null);
+    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", "새 설명", "music", null, null, null);
     QuizResponse updated =
         new QuizResponse(
             1L,
@@ -140,7 +140,7 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_권한없음_403반환")
   void updateQuiz_forbidden_returns403() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null, null);
+    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class)))
         .willThrow(new BusinessException(ErrorCode.QUIZ_FORBIDDEN));
 
@@ -157,7 +157,7 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_퀴즈미존재_404반환")
   void updateQuiz_notFound_returns404() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null, null);
+    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(99L), any(QuizUpdateRequest.class)))
         .willThrow(new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
 
@@ -183,9 +183,20 @@ class QuizControllerTest {
   }
 
   @Test
+  @DisplayName("updateQuiz_questions빈배열_400반환")
+  void updateQuiz_emptyQuestions_returns400() throws Exception {
+    String body = "{\"questions\":[]}";
+
+    mockMvc
+        .perform(patch("/api/quizzes/1").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
   @DisplayName("updateQuiz_모든필드null_정상_200반환")
   void updateQuiz_allNullFields_returns200() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest(null, null, null, null, null);
+    QuizUpdateRequest request = new QuizUpdateRequest(null, null, null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class)))
         .willReturn(sampleQuizResponse);
 

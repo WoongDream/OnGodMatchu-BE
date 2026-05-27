@@ -7,6 +7,7 @@ import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuestionResponse;
+import com.ongodmatchu.domain.quiz.dto.QuestionUpdateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
@@ -35,9 +36,12 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -340,6 +344,9 @@ public class QuizService {
     if (request.visibility() != null) {
       quiz.changeVisibility(request.visibility());
     }
+    if (request.questions() != null) {
+      applyQuestionsDiff(userId, quiz, request.questions());
+    }
 
     String thumbnailUrl =
         quiz.getThumbnailKey() == null
@@ -347,6 +354,108 @@ public class QuizService {
             : s3Service.generateViewUrl(quiz.getThumbnailKey()).viewUrl();
     Double correctRate = singleQuizCorrectRate(quiz.getId());
     return QuizResponse.from(quiz, thumbnailUrl, null, correctRate);
+  }
+
+  /**
+   * id 유지 PUT 의미론으로 questions diff 처리. payload 의 각 항목 id 가 있으면 기존 갱신, 없으면 신규 추가. payload 에서 빠진 기존
+   * id 는 삭제. orderNum 은 payload 순서대로 1부터 재할당. 더 이상 사용하지 않는 이미지 key 는 S3 best-effort 삭제. quiz 자체 필드가
+   * 변경되지 않아도 quiz.touch() 로 updatedAt 강제 갱신.
+   */
+  private void applyQuestionsDiff(Long userId, Quiz quiz, List<QuestionUpdateRequest> payload) {
+    List<Question> existing = questionRepository.findByQuizIdOrderByOrderNum(quiz.getId());
+    Map<Long, Question> existingById =
+        existing.stream().collect(Collectors.toMap(Question::getId, q -> q));
+
+    for (QuestionUpdateRequest req : payload) {
+      if (req.id() != null && !existingById.containsKey(req.id())) {
+        throw new BusinessException(ErrorCode.QUESTION_NOT_FOUND);
+      }
+    }
+
+    Set<String> usedKeysAfter = new HashSet<>();
+    for (QuestionUpdateRequest req : payload) {
+      Question prev = req.id() != null ? existingById.get(req.id()) : null;
+      String prevImageKey = prev != null ? prev.getImageKey() : null;
+      String prevAnswerImageKey = prev != null ? prev.getAnswerImageKey() : null;
+
+      if (req.imageKey() != null && !req.imageKey().equals(prevImageKey)) {
+        s3Service.verifyKeyOwnedAndCompleted(userId, req.imageKey());
+      }
+      if (req.answerImageKey() != null
+          && !req.answerImageKey().equals(prevAnswerImageKey)
+          && !req.answerImageKey().equals(req.imageKey())) {
+        s3Service.verifyKeyOwnedAndCompleted(userId, req.answerImageKey());
+      }
+
+      if (req.imageKey() != null) usedKeysAfter.add(req.imageKey());
+      if (req.answerImageKey() != null) usedKeysAfter.add(req.answerImageKey());
+    }
+
+    Set<Long> keepIds =
+        payload.stream()
+            .map(QuestionUpdateRequest::id)
+            .filter(id -> id != null)
+            .collect(Collectors.toSet());
+
+    Set<String> keysToDelete = new HashSet<>();
+    List<Question> toDelete = new ArrayList<>();
+    for (Question q : existing) {
+      if (keepIds.contains(q.getId())) {
+        continue;
+      }
+      toDelete.add(q);
+      if (q.getImageKey() != null && !usedKeysAfter.contains(q.getImageKey())) {
+        keysToDelete.add(q.getImageKey());
+      }
+      if (q.getAnswerImageKey() != null && !usedKeysAfter.contains(q.getAnswerImageKey())) {
+        keysToDelete.add(q.getAnswerImageKey());
+      }
+    }
+
+    for (QuestionUpdateRequest req : payload) {
+      if (req.id() == null) continue;
+      Question prev = existingById.get(req.id());
+      if (prev.getImageKey() != null
+          && !prev.getImageKey().equals(req.imageKey())
+          && !usedKeysAfter.contains(prev.getImageKey())) {
+        keysToDelete.add(prev.getImageKey());
+      }
+      if (prev.getAnswerImageKey() != null
+          && !prev.getAnswerImageKey().equals(req.answerImageKey())
+          && !usedKeysAfter.contains(prev.getAnswerImageKey())) {
+        keysToDelete.add(prev.getAnswerImageKey());
+      }
+    }
+
+    if (!toDelete.isEmpty()) {
+      questionRepository.deleteAll(toDelete);
+    }
+
+    for (int i = 0; i < payload.size(); i++) {
+      QuestionUpdateRequest req = payload.get(i);
+      int orderNum = i + 1;
+      if (req.id() != null) {
+        Question prev = existingById.get(req.id());
+        prev.update(
+            orderNum, req.questionText(), req.answer(), req.imageKey(), req.answerImageKey());
+      } else {
+        questionRepository.save(
+            Question.builder()
+                .quiz(quiz)
+                .orderNum(orderNum)
+                .imageKey(req.imageKey())
+                .answerImageKey(req.answerImageKey())
+                .questionText(req.questionText())
+                .answer(req.answer())
+                .build());
+      }
+    }
+
+    quiz.touch();
+
+    for (String key : keysToDelete) {
+      s3Service.deleteQuietly(key);
+    }
   }
 
   private Double singleQuizCorrectRate(Long quizId) {
