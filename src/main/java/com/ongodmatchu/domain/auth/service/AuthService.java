@@ -113,10 +113,7 @@ public class AuthService {
             .provider(AuthProvider.LOCAL)
             .emailVerified(true)
             .build();
-    user.agreeToTerms(
-        TermsPolicy.CURRENT_TERMS_VERSION,
-        TermsPolicy.CURRENT_PRIVACY_VERSION,
-        request.marketingOptIn());
+    user.agreeToTerms(TermsPolicy.CURRENT_TERMS_VERSION, TermsPolicy.CURRENT_PRIVACY_VERSION);
     try {
       userRepository.saveAndFlush(user);
     } catch (DataIntegrityViolationException e) {

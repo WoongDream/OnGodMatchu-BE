@@ -24,7 +24,6 @@ import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
-import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -243,32 +242,15 @@ class UserControllerTest {
   // ============ POST /api/users/me/terms-agreement ============
 
   @Test
-  @DisplayName("agreeToTerms_본문있음_200_갱신UserResponse반환")
-  void agreeToTerms_withBody_returns200WithUserResponse() throws Exception {
-    given(userService.agreeToCurrentTerms(eq(1L), any(TermsAgreementRequest.class)))
-        .willReturn(sampleUserResponse);
-    String body = objectMapper.writeValueAsString(new TermsAgreementRequest(true));
-
-    mockMvc
-        .perform(
-            post("/api/users/me/terms-agreement")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.nickname").value("테스트유저"))
-        .andExpect(jsonPath("$.data.needsTermsAgreement").value(false));
-  }
-
-  @Test
-  @DisplayName("agreeToTerms_본문없음_200_갱신UserResponse반환")
-  void agreeToTerms_noBody_returns200WithUserResponse() throws Exception {
-    given(userService.agreeToCurrentTerms(eq(1L), any())).willReturn(sampleUserResponse);
+  @DisplayName("agreeToTerms_200_갱신UserResponse반환")
+  void agreeToTerms_returns200WithUserResponse() throws Exception {
+    given(userService.agreeToCurrentTerms(1L)).willReturn(sampleUserResponse);
 
     mockMvc
         .perform(post("/api/users/me/terms-agreement"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nickname").value("테스트유저"))
         .andExpect(jsonPath("$.data.needsTermsAgreement").value(false));
   }
 

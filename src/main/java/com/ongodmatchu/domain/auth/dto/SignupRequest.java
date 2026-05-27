@@ -17,10 +17,4 @@ public record SignupRequest(
     @NotBlank(message = "인증 코드를 입력해주세요.") @Pattern(regexp = "\\d{6}", message = "인증 코드는 6자리 숫자입니다.")
         String code,
     @AssertTrue(message = "이용약관에 동의해야 합니다.") @NotNull Boolean agreedToTerms,
-    @AssertTrue(message = "개인정보처리방침에 동의해야 합니다.") @NotNull Boolean agreedToPrivacy,
-    Boolean agreedToMarketing) {
-
-  public boolean marketingOptIn() {
-    return agreedToMarketing != null && agreedToMarketing;
-  }
-}
+    @AssertTrue(message = "개인정보처리방침에 동의해야 합니다.") @NotNull Boolean agreedToPrivacy) {}

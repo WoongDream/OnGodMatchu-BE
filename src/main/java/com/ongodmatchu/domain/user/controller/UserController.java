@@ -10,7 +10,6 @@ import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.ProfileStatsResponse;
-import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -110,12 +109,11 @@ public class UserController {
   @Operation(
       summary = "약관 동의 처리",
       description =
-          "현재 버전 이용약관/개인정보처리방침 동의 처리. 호출 자체로 필수 약관 동의 간주. agreedToMarketing 은 옵셔널. OAuth 첫 가입자나 약관 변경 후 재동의 시 사용. 응답엔 갱신된 UserResponse (needsTermsAgreement=false) 동봉 → FE 가 별도 GET /me 없이 store/SWR 동기화 가능. JWT claim 엔 약관 상태가 없어 토큰 재발급은 불필요. 가능 에러: 없음 (idempotent)")
+          "현재 버전 이용약관/개인정보처리방침 동의 처리. 호출 자체로 필수 약관 동의 간주. OAuth 첫 가입자나 약관 변경 후 재동의 시 사용. 응답엔 갱신된 UserResponse (needsTermsAgreement=false) 동봉 → FE 가 별도 GET /me 없이 store/SWR 동기화 가능. JWT claim 엔 약관 상태가 없어 토큰 재발급은 불필요. 가능 에러: 없음 (idempotent)")
   @PostMapping("/me/terms-agreement")
   public ResponseEntity<ApiResponse<UserResponse>> agreeToTerms(
-      @AuthenticationPrincipal CustomUserDetails userDetails,
-      @RequestBody(required = false) TermsAgreementRequest request) {
-    UserResponse response = userService.agreeToCurrentTerms(userDetails.getUser().getId(), request);
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    UserResponse response = userService.agreeToCurrentTerms(userDetails.getUser().getId());
     return ResponseEntity.ok(ApiResponse.ok(response));
   }
 

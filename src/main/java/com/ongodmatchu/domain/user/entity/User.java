@@ -70,9 +70,6 @@ public class User extends BaseTimeEntity {
 
   private String privacyVersion;
 
-  @Column(nullable = false)
-  private boolean marketingAgreed = false;
-
   private LocalDateTime termsAgreedAt;
 
   @Builder
@@ -133,10 +130,9 @@ public class User extends BaseTimeEntity {
   }
 
   /** 가입 시점 약관 동의 기록. 재동의 플로우는 후속 작업. */
-  public void agreeToTerms(String termsVersion, String privacyVersion, boolean marketingAgreed) {
+  public void agreeToTerms(String termsVersion, String privacyVersion) {
     this.termsVersion = termsVersion;
     this.privacyVersion = privacyVersion;
-    this.marketingAgreed = marketingAgreed;
     this.termsAgreedAt = LocalDateTime.now();
   }
 

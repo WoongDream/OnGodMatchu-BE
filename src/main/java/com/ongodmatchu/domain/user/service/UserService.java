@@ -6,7 +6,6 @@ import com.ongodmatchu.domain.auth.validation.TermsPolicy;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
-import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -68,12 +67,9 @@ public class UserService {
    * FE 가 별도 GET /me 없이 store 동기화 가능.
    */
   @Transactional
-  public UserResponse agreeToCurrentTerms(Long userId, TermsAgreementRequest request) {
+  public UserResponse agreeToCurrentTerms(Long userId) {
     User user = findUserById(userId);
-    user.agreeToTerms(
-        TermsPolicy.CURRENT_TERMS_VERSION,
-        TermsPolicy.CURRENT_PRIVACY_VERSION,
-        request != null && request.marketingOptIn());
+    user.agreeToTerms(TermsPolicy.CURRENT_TERMS_VERSION, TermsPolicy.CURRENT_PRIVACY_VERSION);
     return toResponse(user);
   }
 
