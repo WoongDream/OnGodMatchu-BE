@@ -49,13 +49,21 @@ public class QuizController {
     return ResponseEntity.ok(ApiResponse.ok(quizService.getCategories()));
   }
 
-  @Operation(summary = "공개 퀴즈 목록", description = "PUBLIC 퀴즈만. category 파라미터로 필터. 비로그인 허용")
+  @Operation(
+      summary = "공개 퀴즈 목록",
+      description =
+          "PUBLIC 퀴즈만. category 파라미터로 필터. 비로그인 허용. 기본 정렬 = playCount DESC, createdAt DESC (tiebreaker). 인증 시 isStarred 채움, 비로그인은 null")
   @GetMapping
   public ResponseEntity<ApiResponse<Page<QuizResponse>>> getQuizList(
       @RequestParam(required = false) String category,
-      @PageableDefault(size = 12, sort = "createdAt", direction = Sort.Direction.DESC)
-          Pageable pageable) {
-    return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizList(category, pageable)));
+      @PageableDefault(
+              size = 12,
+              sort = {"playCount", "createdAt"},
+              direction = Sort.Direction.DESC)
+          Pageable pageable,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
+    return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizList(category, viewerId, pageable)));
   }
 
   @Operation(

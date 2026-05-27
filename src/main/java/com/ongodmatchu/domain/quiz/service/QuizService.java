@@ -35,6 +35,7 @@ import java.time.LocalDateTime;
 import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -67,7 +68,7 @@ public class QuizService {
   }
 
   @Transactional(readOnly = true)
-  public Page<QuizResponse> getQuizList(String category, Pageable pageable) {
+  public Page<QuizResponse> getQuizList(String category, Long viewerUserId, Pageable pageable) {
     Page<Quiz> page =
         StringUtils.hasText(category)
             ? quizRepository.findByCategoryAndVisibility(category, QuizVisibility.PUBLIC, pageable)
@@ -78,11 +79,23 @@ public class QuizService {
     Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
 
     Map<Long, Double> rateByQuizId = rateMapForPage(page);
+    Set<Long> starredQuizIds = starredQuizIdsForPage(viewerUserId, page);
 
     return page.map(
         q ->
             QuizResponse.from(
-                q, lookupUrl(presigned, q.getThumbnailKey()), null, rateByQuizId.get(q.getId())));
+                q,
+                lookupUrl(presigned, q.getThumbnailKey()),
+                viewerUserId == null ? null : starredQuizIds.contains(q.getId()),
+                rateByQuizId.get(q.getId())));
+  }
+
+  private Set<Long> starredQuizIdsForPage(Long viewerUserId, Page<Quiz> page) {
+    if (viewerUserId == null || page.isEmpty()) {
+      return Collections.emptySet();
+    }
+    List<Long> quizIds = page.getContent().stream().map(Quiz::getId).toList();
+    return new HashSet<>(quizStarRepository.findStarredQuizIds(viewerUserId, quizIds));
   }
 
   private Map<Long, Double> rateMapForPage(Page<Quiz> page) {

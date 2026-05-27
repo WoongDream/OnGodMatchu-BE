@@ -1,11 +1,15 @@
 package com.ongodmatchu.domain.quiz.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -29,9 +33,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.data.jpa.mapping.JpaMetamodelMappingContext;
 import org.springframework.http.MediaType;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -97,6 +105,61 @@ class QuizControllerTest {
   @AfterEach
   void tearDown() {
     SecurityContextHolder.clearContext();
+  }
+
+  // ============ GET /api/quizzes ============
+
+  @Test
+  @DisplayName("getQuizList_기본정렬_playCount_DESC_그리고_createdAt_DESC_tiebreaker")
+  void getQuizList_defaultSort_playCountDescThenCreatedAtDesc() throws Exception {
+    given(quizService.getQuizList(any(), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(sampleQuizResponse)));
+
+    mockMvc.perform(get("/api/quizzes")).andExpect(status().isOk());
+
+    ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+    then(quizService).should().getQuizList(any(), any(), captor.capture());
+    Pageable captured = captor.getValue();
+    List<Sort.Order> orders = captured.getSort().toList();
+    assertThat(orders).hasSize(2);
+    assertThat(orders.get(0).getProperty()).isEqualTo("playCount");
+    assertThat(orders.get(0).getDirection()).isEqualTo(Sort.Direction.DESC);
+    assertThat(orders.get(1).getProperty()).isEqualTo("createdAt");
+    assertThat(orders.get(1).getDirection()).isEqualTo(Sort.Direction.DESC);
+  }
+
+  @Test
+  @DisplayName("getQuizList_비로그인_viewerId_null_전달")
+  void getQuizList_anonymousViewer_passesNullViewerId() throws Exception {
+    SecurityContextHolder.clearContext();
+    given(quizService.getQuizList(any(), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc.perform(get("/api/quizzes")).andExpect(status().isOk());
+
+    then(quizService).should().getQuizList(isNull(), isNull(), any(Pageable.class));
+  }
+
+  @Test
+  @DisplayName("getQuizList_인증사용자_viewerId_전달")
+  void getQuizList_authenticated_passesViewerId() throws Exception {
+    given(quizService.getQuizList(any(), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc.perform(get("/api/quizzes")).andExpect(status().isOk());
+
+    then(quizService).should().getQuizList(isNull(), eq(1L), any(Pageable.class));
+  }
+
+  @Test
+  @DisplayName("getQuizList_category파라미터_그대로_전달")
+  void getQuizList_categoryParam_forwarded() throws Exception {
+    given(quizService.getQuizList(eq("music"), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc.perform(get("/api/quizzes").param("category", "music")).andExpect(status().isOk());
+
+    then(quizService).should().getQuizList(eq("music"), eq(1L), any(Pageable.class));
   }
 
   // ============ PATCH /api/quizzes/{quizId} ============
