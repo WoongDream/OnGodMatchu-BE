@@ -15,8 +15,30 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> 
 
   Page<QuizAttempt> findByUserIdOrderByCompletedAtDesc(Long userId, Pageable pageable);
 
+  long countByQuizId(Long quizId);
+
   @Transactional
   void deleteByQuizIdIn(Collection<Long> quizIds);
+
+  /** 점수 분포 — score 별 응시 수. 빈 score 는 결과에 미포함(Service 단에서 0 채움). */
+  @Query(
+      "SELECT a.score AS score, COUNT(a) AS count "
+          + "FROM QuizAttempt a WHERE a.quiz.id = :quizId GROUP BY a.score")
+  List<ScoreBucketRow> findScoreDistributionByQuizId(@Param("quizId") Long quizId);
+
+  /** 동률 중간 처리 백분위용 — 본인보다 score 가 높은 응시 수. */
+  @Query("SELECT COUNT(a) FROM QuizAttempt a " + "WHERE a.quiz.id = :quizId AND a.score > :score")
+  long countByQuizIdAndScoreGreaterThan(@Param("quizId") Long quizId, @Param("score") int score);
+
+  /** 동률 중간 처리 백분위용 — 본인과 score 가 같은 응시 수 (본인 attempt 포함). */
+  @Query("SELECT COUNT(a) FROM QuizAttempt a " + "WHERE a.quiz.id = :quizId AND a.score = :score")
+  long countByQuizIdAndScore(@Param("quizId") Long quizId, @Param("score") int score);
+
+  interface ScoreBucketRow {
+    Integer getScore();
+
+    Long getCount();
+  }
 
   /**
    * 본인 소유 퀴즈에 대한 attempts 중 KST 이번주(월요일 00:00 ~ now) 시도 수. 호출자는 KST 월요일 0시 시각을 LocalDateTime 으로 직접

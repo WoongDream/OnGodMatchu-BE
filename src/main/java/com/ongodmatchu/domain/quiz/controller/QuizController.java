@@ -7,6 +7,8 @@ import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizShareResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
+import com.ongodmatchu.domain.quiz.dto.ScoreDistributionResponse;
+import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.quiz.service.QuizShareService;
 import com.ongodmatchu.domain.quiz.service.QuizStarService;
@@ -47,6 +49,7 @@ public class QuizController {
   private final QuizService quizService;
   private final QuizStarService quizStarService;
   private final QuizShareService quizShareService;
+  private final QuizAttemptService quizAttemptService;
 
   @Operation(summary = "카테고리 목록", description = "퀴즈 카테고리 9종 (영문 키 + 한국어 라벨). 화이트리스트")
   @GetMapping("/categories")
@@ -79,6 +82,19 @@ public class QuizController {
       @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
     Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
     return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizDetail(quizId, viewerId)));
+  }
+
+  @Operation(
+      summary = "퀴즈 점수 분포",
+      description =
+          "전체 응시자 수 + 평균 점수 + score 0~totalQuestions 전 칸 분포 (응시 없는 score 도 count=0). 비로그인 허용."
+              + " PRIVATE 퀴즈는 본인만 조회 가능 (외부 QUIZ_NOT_FOUND)")
+  @GetMapping("/{quizId}/score-distribution")
+  public ResponseEntity<ApiResponse<ScoreDistributionResponse>> getScoreDistribution(
+      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
+    return ResponseEntity.ok(
+        ApiResponse.ok(quizAttemptService.getScoreDistribution(quizId, viewerId)));
   }
 
   @Operation(

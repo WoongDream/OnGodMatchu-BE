@@ -20,7 +20,10 @@ import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizShareResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
+import com.ongodmatchu.domain.quiz.dto.ScoreCountResponse;
+import com.ongodmatchu.domain.quiz.dto.ScoreDistributionResponse;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
+import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.quiz.service.QuizShareService;
 import com.ongodmatchu.domain.quiz.service.QuizStarService;
@@ -63,6 +66,7 @@ class QuizControllerTest {
   @MockitoBean private QuizService quizService;
   @MockitoBean private QuizStarService quizStarService;
   @MockitoBean private QuizShareService quizShareService;
+  @MockitoBean private QuizAttemptService quizAttemptService;
   @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
   private User testUser;
@@ -165,6 +169,83 @@ class QuizControllerTest {
     mockMvc.perform(get("/api/quizzes").param("category", "music")).andExpect(status().isOk());
 
     then(quizService).should().getQuizList(eq("music"), eq(1L), any(Pageable.class));
+  }
+
+  // ============ GET /api/quizzes/{quizId}/score-distribution ============
+
+  @Test
+  @DisplayName("getScoreDistribution_비로그인_200반환")
+  void getScoreDistribution_anonymous_returns200() throws Exception {
+    SecurityContextHolder.clearContext();
+    ScoreDistributionResponse response =
+        new ScoreDistributionResponse(
+            0L, 0.0, List.of(new ScoreCountResponse(0, 0L), new ScoreCountResponse(1, 0L)));
+    given(quizAttemptService.getScoreDistribution(eq(1L), isNull())).willReturn(response);
+
+    mockMvc
+        .perform(get("/api/quizzes/1/score-distribution"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.totalAttempts").value(0))
+        .andExpect(jsonPath("$.data.averageScore").value(0.0))
+        .andExpect(jsonPath("$.data.distribution").isArray());
+
+    then(quizAttemptService).should().getScoreDistribution(eq(1L), isNull());
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_로그인_viewerId_전달")
+  void getScoreDistribution_authenticated_passesViewerId() throws Exception {
+    ScoreDistributionResponse response =
+        new ScoreDistributionResponse(0L, 0.0, List.of(new ScoreCountResponse(0, 0L)));
+    given(quizAttemptService.getScoreDistribution(eq(1L), eq(1L))).willReturn(response);
+
+    mockMvc.perform(get("/api/quizzes/1/score-distribution")).andExpect(status().isOk());
+
+    then(quizAttemptService).should().getScoreDistribution(eq(1L), eq(1L));
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_PRIVATE_외부_404반환")
+  void getScoreDistribution_privateExternalViewer_returns404() throws Exception {
+    SecurityContextHolder.clearContext();
+    given(quizAttemptService.getScoreDistribution(eq(1L), isNull()))
+        .willThrow(new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
+
+    mockMvc
+        .perform(get("/api/quizzes/1/score-distribution"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("QUIZ_NOT_FOUND"));
+
+    then(quizAttemptService).should().getScoreDistribution(eq(1L), isNull());
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_분포_응답_매핑")
+  void getScoreDistribution_distributionMapping() throws Exception {
+    ScoreDistributionResponse response =
+        new ScoreDistributionResponse(
+            10L,
+            2.3,
+            List.of(
+                new ScoreCountResponse(0, 1L),
+                new ScoreCountResponse(1, 2L),
+                new ScoreCountResponse(2, 3L),
+                new ScoreCountResponse(3, 4L)));
+    given(quizAttemptService.getScoreDistribution(eq(1L), eq(1L))).willReturn(response);
+
+    mockMvc
+        .perform(get("/api/quizzes/1/score-distribution"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.totalAttempts").value(10))
+        .andExpect(jsonPath("$.data.averageScore").value(2.3))
+        .andExpect(jsonPath("$.data.distribution.length()").value(4))
+        .andExpect(jsonPath("$.data.distribution[0].score").value(0))
+        .andExpect(jsonPath("$.data.distribution[0].count").value(1))
+        .andExpect(jsonPath("$.data.distribution[3].score").value(3))
+        .andExpect(jsonPath("$.data.distribution[3].count").value(4));
   }
 
   // ============ PATCH /api/quizzes/{quizId} ============
