@@ -5,12 +5,16 @@ import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizShareResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.service.QuizService;
+import com.ongodmatchu.domain.quiz.service.QuizShareService;
 import com.ongodmatchu.domain.quiz.service.QuizStarService;
 import com.ongodmatchu.global.response.ApiResponse;
+import com.ongodmatchu.global.web.AnonIdCookieFilter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -42,6 +46,7 @@ public class QuizController {
 
   private final QuizService quizService;
   private final QuizStarService quizStarService;
+  private final QuizShareService quizShareService;
 
   @Operation(summary = "카테고리 목록", description = "퀴즈 카테고리 9종 (영문 키 + 한국어 라벨). 화이트리스트")
   @GetMapping("/categories")
@@ -100,14 +105,19 @@ public class QuizController {
   }
 
   @Operation(
-      summary = "공유 카운터 증가",
-      description = "비로그인 허용. PRIVATE 퀴즈는 본인만 호출 가능 (외부는 QUIZ_NOT_FOUND)")
+      summary = "공유 카운터 증가 (사용자/익명 단위 중복 방지)",
+      description =
+          "로그인 사용자는 user_id, 비로그인은 anon_id 쿠키로 식별. 같은 식별자는 같은 퀴즈에 대해 1회만 카운트 증가. "
+              + "이미 공유한 식별자면 alreadyShared=true 로 응답 (카운트는 그대로). "
+              + "PRIVATE 퀴즈는 본인만 호출 가능 (외부는 QUIZ_NOT_FOUND).")
   @PostMapping("/{quizId}/share")
-  public ResponseEntity<ApiResponse<Void>> share(
-      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
-    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
-    quizService.incrementShareCount(quizId, viewerId);
-    return ResponseEntity.ok(ApiResponse.ok());
+  public ResponseEntity<ApiResponse<QuizShareResponse>> share(
+      @PathVariable Long quizId,
+      HttpServletRequest httpRequest,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long userId = userDetails != null ? userDetails.getUser().getId() : null;
+    String anonId = (String) httpRequest.getAttribute(AnonIdCookieFilter.REQUEST_ATTRIBUTE);
+    return ResponseEntity.ok(ApiResponse.ok(quizShareService.recordShare(quizId, userId, anonId)));
   }
 
   @Operation(

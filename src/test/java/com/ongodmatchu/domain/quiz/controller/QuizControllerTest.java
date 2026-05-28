@@ -11,20 +11,24 @@ import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizShareResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.service.QuizService;
+import com.ongodmatchu.domain.quiz.service.QuizShareService;
 import com.ongodmatchu.domain.quiz.service.QuizStarService;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
+import com.ongodmatchu.global.web.AnonIdCookieFilter;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -58,6 +62,7 @@ class QuizControllerTest {
 
   @MockitoBean private QuizService quizService;
   @MockitoBean private QuizStarService quizStarService;
+  @MockitoBean private QuizShareService quizShareService;
   @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
   private User testUser;
@@ -311,5 +316,62 @@ class QuizControllerTest {
         .andExpect(status().isNotFound())
         .andExpect(jsonPath("$.success").value(false))
         .andExpect(jsonPath("$.error.code").value("QUIZ_NOT_FOUND"));
+  }
+
+  // ============ POST /api/quizzes/{quizId}/share ============
+
+  @Test
+  @DisplayName("share_비로그인_anonId주입_userId_null로_recordShare호출")
+  void share_anonymousWithAnonId_callsRecordShareWithNullUserId() throws Exception {
+    SecurityContextHolder.clearContext();
+    given(quizShareService.recordShare(1L, null, "anon-uuid"))
+        .willReturn(new QuizShareResponse(6L, false));
+
+    mockMvc
+        .perform(
+            post("/api/quizzes/1/share")
+                .requestAttr(AnonIdCookieFilter.REQUEST_ATTRIBUTE, "anon-uuid"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.shareCount").value(6))
+        .andExpect(jsonPath("$.data.alreadyShared").value(false));
+
+    then(quizShareService).should().recordShare(eq(1L), isNull(), eq("anon-uuid"));
+  }
+
+  @Test
+  @DisplayName("share_로그인_anonId_둘다_전달되고_alreadyShared_true_직렬화")
+  void share_authenticatedWithAnonId_passesBothIdsAndSerializesAlreadyShared() throws Exception {
+    given(quizShareService.recordShare(1L, 1L, "anon-uuid"))
+        .willReturn(new QuizShareResponse(3L, true));
+
+    mockMvc
+        .perform(
+            post("/api/quizzes/1/share")
+                .requestAttr(AnonIdCookieFilter.REQUEST_ATTRIBUTE, "anon-uuid"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.shareCount").value(3))
+        .andExpect(jsonPath("$.data.alreadyShared").value(true));
+
+    then(quizShareService).should().recordShare(eq(1L), eq(1L), eq("anon-uuid"));
+  }
+
+  @Test
+  @DisplayName("share_PRIVATE퀴즈_외부viewer_QUIZ_NOT_FOUND_404반환")
+  void share_privateQuizExternalViewer_returns404() throws Exception {
+    SecurityContextHolder.clearContext();
+    given(quizShareService.recordShare(1L, null, "anon-uuid"))
+        .willThrow(new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
+
+    mockMvc
+        .perform(
+            post("/api/quizzes/1/share")
+                .requestAttr(AnonIdCookieFilter.REQUEST_ATTRIBUTE, "anon-uuid"))
+        .andExpect(status().isNotFound())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("QUIZ_NOT_FOUND"));
+
+    then(quizShareService).should().recordShare(eq(1L), isNull(), eq("anon-uuid"));
   }
 }

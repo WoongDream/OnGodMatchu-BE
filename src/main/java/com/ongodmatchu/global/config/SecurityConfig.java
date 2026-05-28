@@ -7,6 +7,7 @@ import com.ongodmatchu.domain.auth.oauth2.OAuth2AuthenticationFailureHandler;
 import com.ongodmatchu.domain.auth.oauth2.OAuth2AuthenticationSuccessHandler;
 import com.ongodmatchu.domain.auth.security.ApiAuthenticationEntryPoint;
 import com.ongodmatchu.domain.auth.security.CustomUserDetailsService;
+import com.ongodmatchu.global.web.AnonIdCookieFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -76,7 +77,10 @@ public class SecurityConfig {
                         "/api/quizzes/*/play",
                         "/api/quizzes/*/share",
                         "/api/quizzes/*/attempts",
-                        "/api/quizzes/grade")
+                        "/api/quizzes/grade",
+                        "/api/visits")
+                    .permitAll()
+                    .requestMatchers(HttpMethod.GET, "/api/stats/**")
                     .permitAll()
                     .anyRequest()
                     .authenticated())
@@ -89,6 +93,7 @@ public class SecurityConfig {
         .addFilterBefore(
             new JwtAuthenticationFilter(jwtProvider, userDetailsService),
             UsernamePasswordAuthenticationFilter.class)
+        .addFilterBefore(new AnonIdCookieFilter(), JwtAuthenticationFilter.class)
         .build();
   }
 
