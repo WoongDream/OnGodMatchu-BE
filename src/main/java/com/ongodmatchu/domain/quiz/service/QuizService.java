@@ -37,6 +37,7 @@ import java.time.temporal.TemporalAdjusters;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -64,8 +65,21 @@ public class QuizService {
   private final QuizCommentRepository quizCommentRepository;
   private final S3Service s3Service;
 
+  @Transactional(readOnly = true)
   public List<CategoryResponse> getCategories() {
-    return Arrays.stream(QuizCategory.values()).map(CategoryResponse::from).toList();
+    Map<String, Long> playCounts =
+        quizRepository.sumPlayCountByCategory(QuizVisibility.PUBLIC).stream()
+            .collect(
+                Collectors.toMap(
+                    QuizRepository.CategoryPlayCountRow::getCategory,
+                    QuizRepository.CategoryPlayCountRow::getPlays));
+    // 총 플레이수 내림차순. 동률(플레이 0 포함)은 stable sort 라 enum 선언 순서 유지.
+    return Arrays.stream(QuizCategory.values())
+        .sorted(
+            Comparator.comparingLong((QuizCategory c) -> playCounts.getOrDefault(c.getKey(), 0L))
+                .reversed())
+        .map(CategoryResponse::from)
+        .toList();
   }
 
   @Transactional(readOnly = true)

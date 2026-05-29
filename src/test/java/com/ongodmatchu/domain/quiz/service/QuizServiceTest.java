@@ -326,7 +326,8 @@ class QuizServiceTest {
     given(questionRepository.save(any())).willAnswer(inv -> inv.getArgument(0));
 
     QuizCreateRequest request =
-        quizCreate("기본비공개", null, "etc", null, null, List.of(qCreate(null, null, "문제1", "정답1")));
+        quizCreate(
+            "기본비공개", null, "general", null, null, List.of(qCreate(null, null, "문제1", "정답1")));
 
     QuizResponse result = quizService.createQuiz(1L, request);
 
@@ -345,7 +346,7 @@ class QuizServiceTest {
         quizCreate(
             "공개퀴즈",
             null,
-            "etc",
+            "general",
             null,
             QuizVisibility.PUBLIC,
             List.of(qCreate(null, null, "문제1", "정답1")));
@@ -385,7 +386,7 @@ class QuizServiceTest {
         quizCreate(
             "이미지 퀴즈",
             "설명",
-            "entertainment",
+            "person",
             "quiz-images/uid/thumb.png",
             null,
             List.of(qCreate("quiz-images/uid/q.png", "quiz-images/uid/a.png", "문제1", "정답1")));
@@ -412,7 +413,8 @@ class QuizServiceTest {
 
     String key = "quiz-images/uid/same.png";
     QuizCreateRequest request =
-        quizCreate("동일 key 퀴즈", null, "etc", null, null, List.of(qCreate(key, key, "문제1", "정답1")));
+        quizCreate(
+            "동일 key 퀴즈", null, "general", null, null, List.of(qCreate(key, key, "문제1", "정답1")));
 
     quizService.createQuiz(1L, request);
 
@@ -440,25 +442,75 @@ class QuizServiceTest {
     then(s3Service).should(times(0)).verifyKeyOwnedAndCompleted(anyLong(), anyString());
   }
 
+  /** CategoryPlayCountRow projection stub 헬퍼. */
+  private static QuizRepository.CategoryPlayCountRow categoryRow(String category, long plays) {
+    return new QuizRepository.CategoryPlayCountRow() {
+      @Override
+      public String getCategory() {
+        return category;
+      }
+
+      @Override
+      public long getPlays() {
+        return plays;
+      }
+    };
+  }
+
   @Test
-  @DisplayName("카테고리 목록을 영문 키 + 라벨로 반환한다")
+  @DisplayName("플레이 기록 0이면 enum 선언 순서대로 10종 카테고리를 영문 키 + 라벨로 반환한다")
   void getCategories_success() {
+    given(quizRepository.sumPlayCountByCategory(QuizVisibility.PUBLIC)).willReturn(List.of());
+
     List<CategoryResponse> categories = quizService.getCategories();
 
-    assertThat(categories).hasSize(9);
+    assertThat(categories).hasSize(10);
     assertThat(categories)
         .extracting(CategoryResponse::key)
         .containsExactly(
-            "entertainment",
-            "movie",
-            "drama",
-            "anime",
             "game",
             "music",
-            "sports",
+            "culture",
+            "broadcast",
             "general",
-            "etc");
-    assertThat(categories.get(3).label()).isEqualTo("애니메이션");
+            "comic",
+            "food",
+            "person",
+            "sports",
+            "meme");
+    assertThat(categories)
+        .filteredOn(c -> c.key().equals("meme"))
+        .singleElement()
+        .extracting(CategoryResponse::label)
+        .isEqualTo("병맛");
+  }
+
+  @Test
+  @DisplayName("총 플레이수 내림차순 정렬 — 동률/0은 enum 선언 순서 유지(stable)")
+  void getCategories_sortedByPlayCountDesc() {
+    given(quizRepository.sumPlayCountByCategory(QuizVisibility.PUBLIC))
+        .willReturn(
+            List.of(
+                categoryRow("sports", 500), categoryRow("game", 100), categoryRow("music", 100)));
+
+    List<CategoryResponse> categories = quizService.getCategories();
+
+    assertThat(categories).hasSize(10);
+    // sports(500) > game(100)=music(100) > 나머지 0
+    // 동률·0 은 stable sort 라 enum 선언 순서(game<music<culture<...) 유지
+    assertThat(categories)
+        .extracting(CategoryResponse::key)
+        .containsExactly(
+            "sports",
+            "game",
+            "music",
+            "culture",
+            "broadcast",
+            "general",
+            "comic",
+            "food",
+            "person",
+            "meme");
   }
 
   @Test

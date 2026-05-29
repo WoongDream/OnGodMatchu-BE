@@ -51,7 +51,9 @@ public class QuizController {
   private final QuizShareService quizShareService;
   private final QuizAttemptService quizAttemptService;
 
-  @Operation(summary = "카테고리 목록", description = "퀴즈 카테고리 9종 (영문 키 + 한국어 라벨). 화이트리스트")
+  @Operation(
+      summary = "카테고리 목록",
+      description = "퀴즈 카테고리 10종 (영문 키 + 한국어 라벨). 공개 퀴즈 총 플레이수 내림차순 정렬 (동률은 기본 순서)")
   @GetMapping("/categories")
   public ResponseEntity<ApiResponse<List<CategoryResponse>>> getCategories() {
     return ResponseEntity.ok(ApiResponse.ok(quizService.getCategories()));
