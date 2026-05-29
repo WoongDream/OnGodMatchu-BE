@@ -15,8 +15,30 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> 
 
   Page<QuizAttempt> findByUserIdOrderByCompletedAtDesc(Long userId, Pageable pageable);
 
+  long countByQuizId(Long quizId);
+
   @Transactional
   void deleteByQuizIdIn(Collection<Long> quizIds);
+
+  /** 점수 분포 — score 별 응시 수. 빈 score 는 결과에 미포함(Service 단에서 0 채움). */
+  @Query(
+      "SELECT a.score AS score, COUNT(a) AS count "
+          + "FROM QuizAttempt a WHERE a.quiz.id = :quizId GROUP BY a.score")
+  List<ScoreBucketRow> findScoreDistributionByQuizId(@Param("quizId") Long quizId);
+
+  /** 동률 중간 처리 백분위용 — 본인보다 score 가 높은 응시 수. */
+  @Query("SELECT COUNT(a) FROM QuizAttempt a " + "WHERE a.quiz.id = :quizId AND a.score > :score")
+  long countByQuizIdAndScoreGreaterThan(@Param("quizId") Long quizId, @Param("score") int score);
+
+  /** 동률 중간 처리 백분위용 — 본인과 score 가 같은 응시 수 (본인 attempt 포함). */
+  @Query("SELECT COUNT(a) FROM QuizAttempt a " + "WHERE a.quiz.id = :quizId AND a.score = :score")
+  long countByQuizIdAndScore(@Param("quizId") Long quizId, @Param("score") int score);
+
+  interface ScoreBucketRow {
+    Integer getScore();
+
+    Long getCount();
+  }
 
   /**
    * 본인 소유 퀴즈에 대한 attempts 중 KST 이번주(월요일 00:00 ~ now) 시도 수. 호출자는 KST 월요일 0시 시각을 LocalDateTime 으로 직접
@@ -36,6 +58,18 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> 
       "SELECT (SUM(a.score) * 100.0 / SUM(a.totalQuestions)) "
           + "FROM QuizAttempt a WHERE a.quiz.user.id = :userId GROUP BY a.quiz.id")
   List<Double> perQuizCorrectRatesOwnedBy(@Param("userId") Long userId);
+
+  /** 본인이 푼 횟수 — user_id 로 필터하므로 비로그인(user=null) attempt 는 자연 제외. */
+  long countByUserId(Long userId);
+
+  /**
+   * 본인이 푼 평균 정답률 (0~100). 산출: 본인 attempts 의 SUM(score)*100/SUM(totalQuestions). 시도 0이면 SUM 이 null
+   * 이라 null 반환.
+   */
+  @Query(
+      "SELECT (SUM(a.score) * 100.0 / SUM(a.totalQuestions)) "
+          + "FROM QuizAttempt a WHERE a.user.id = :userId")
+  Double avgSolveRateOf(@Param("userId") Long userId);
 
   /** 주어진 퀴즈 ID 들의 정답률(0~100). 시도 없는 퀴즈는 결과에 누락. */
   @Query(

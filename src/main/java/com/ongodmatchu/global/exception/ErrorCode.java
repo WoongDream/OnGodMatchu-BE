@@ -59,6 +59,9 @@ public enum ErrorCode {
   COMMENT_FORBIDDEN(HttpStatus.FORBIDDEN, "COMMENT_FORBIDDEN", "해당 댓글에 대한 권한이 없습니다."),
   INVALID_COMMENT_FORMAT(HttpStatus.BAD_REQUEST, "INVALID_COMMENT_FORMAT", "댓글 형식이 올바르지 않습니다."),
 
+  // Notice
+  NOTICE_NOT_FOUND(HttpStatus.NOT_FOUND, "NOTICE_NOT_FOUND", "공지를 찾을 수 없습니다."),
+
   // Upload
   INVALID_FILE_TYPE(HttpStatus.BAD_REQUEST, "INVALID_FILE_TYPE", "지원하지 않는 파일 타입입니다."),
   INVALID_FILE_SIZE(HttpStatus.BAD_REQUEST, "INVALID_FILE_SIZE", "허용된 파일 크기를 초과했습니다."),

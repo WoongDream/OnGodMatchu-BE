@@ -84,7 +84,12 @@ class QuizAttemptControllerTest {
 
     AttemptResultResponse response =
         new AttemptResultResponse(
-            100L, 1, 1, 100.0, List.of(new AttemptItemResultResponse(10L, true, "정답", "정답", null)));
+            100L,
+            1,
+            1,
+            100.0,
+            null,
+            List.of(new AttemptItemResultResponse(10L, true, "정답", "정답", null)));
 
     given(quizAttemptService.submit(eq(1L), eq(1L), any(AttemptCreateRequest.class)))
         .willReturn(response);
@@ -100,6 +105,7 @@ class QuizAttemptControllerTest {
         .andExpect(jsonPath("$.data.score").value(1))
         .andExpect(jsonPath("$.data.totalQuestions").value(1))
         .andExpect(jsonPath("$.data.percent").value(100.0))
+        .andExpect(jsonPath("$.data.topPercentile").isEmpty())
         .andExpect(jsonPath("$.data.results").isArray())
         .andExpect(jsonPath("$.data.results[0].correct").value(true))
         .andExpect(jsonPath("$.data.results[0].correctAnswer").value("정답"));
@@ -113,7 +119,12 @@ class QuizAttemptControllerTest {
 
     AttemptResultResponse response =
         new AttemptResultResponse(
-            null, 1, 1, 100.0, List.of(new AttemptItemResultResponse(10L, true, "정답", "정답", null)));
+            null,
+            1,
+            1,
+            100.0,
+            null,
+            List.of(new AttemptItemResultResponse(10L, true, "정답", "정답", null)));
 
     SecurityContextHolder.clearContext();
 
@@ -167,9 +178,33 @@ class QuizAttemptControllerTest {
   }
 
   @Test
-  @DisplayName("submit_userAnswer빈값_400반환")
-  void submit_blankUserAnswer_returns400() throws Exception {
+  @DisplayName("submit_userAnswer빈값_201수신_시간초과_빈답_허용")
+  void submit_blankUserAnswer_returns201() throws Exception {
     String body = "{\"answers\":[{\"questionId\":1,\"userAnswer\":\"\"}]}";
+
+    AttemptResultResponse response =
+        new AttemptResultResponse(
+            200L,
+            0,
+            1,
+            0.0,
+            null,
+            List.of(new AttemptItemResultResponse(1L, false, "정답", "", null)));
+    given(quizAttemptService.submit(eq(1L), eq(1L), any(AttemptCreateRequest.class)))
+        .willReturn(response);
+
+    mockMvc
+        .perform(
+            post("/api/quizzes/1/attempts").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.results[0].correct").value(false));
+  }
+
+  @Test
+  @DisplayName("submit_userAnswer_null값_400반환")
+  void submit_nullUserAnswer_returns400() throws Exception {
+    String body = "{\"answers\":[{\"questionId\":1,\"userAnswer\":null}]}";
 
     mockMvc
         .perform(
@@ -217,6 +252,35 @@ class QuizAttemptControllerTest {
   }
 
   @Test
+  @DisplayName("submit_응시자_2명이상_topPercentile_숫자응답")
+  void submit_multipleAttempts_topPercentileSerialized() throws Exception {
+    AttemptCreateRequest request =
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+
+    AttemptResultResponse response =
+        new AttemptResultResponse(
+            101L,
+            1,
+            1,
+            100.0,
+            5.0,
+            List.of(new AttemptItemResultResponse(10L, true, "정답", "정답", null)));
+
+    given(quizAttemptService.submit(eq(1L), eq(1L), any(AttemptCreateRequest.class)))
+        .willReturn(response);
+
+    mockMvc
+        .perform(
+            post("/api/quizzes/1/attempts")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(request)))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.attemptId").value(101))
+        .andExpect(jsonPath("$.data.topPercentile").value(5.0));
+  }
+
+  @Test
   @DisplayName("submit_오답포함결과_correct필드false포함")
   void submit_mixedResults_incorrectFlagIncluded() throws Exception {
     AttemptCreateRequest request =
@@ -229,6 +293,7 @@ class QuizAttemptControllerTest {
             1,
             2,
             50.0,
+            33.3,
             List.of(
                 new AttemptItemResultResponse(10L, true, "정답", "정답", null),
                 new AttemptItemResultResponse(

@@ -12,6 +12,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.quiz.dto.AttemptListItemResponse;
@@ -24,7 +25,6 @@ import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
-import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -42,6 +42,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -100,6 +101,9 @@ class UserControllerTest {
             "테스트유저",
             "user@example.com",
             "https://cdn.example.com/default.png",
+            null,
+            null,
+            null,
             "안녕하세요",
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,
@@ -132,6 +136,53 @@ class UserControllerTest {
         .andExpect(jsonPath("$.data.activeDays").value(100))
         .andExpect(jsonPath("$.data.isProfilePublic").value(true))
         .andExpect(jsonPath("$.data.provider").value("LOCAL"));
+  }
+
+  @Test
+  @DisplayName("getMe_원본URL+transform보유_응답에노출_200")
+  void getMe_withOriginalAndTransform_exposesInResponse() throws Exception {
+    UserResponse withTransform =
+        new UserResponse(
+            UUID.fromString("00000000-0000-0000-0000-000000000001"),
+            "테스트유저",
+            "user@example.com",
+            "https://cdn.example.com/cropped.png",
+            "profile-images/original.png",
+            "https://cdn.example.com/original.png",
+            "{\"rotate\":90,\"scale\":1.5,\"crop\":{\"x\":10,\"y\":20}}",
+            "안녕하세요",
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            100L,
+            true,
+            "LOCAL",
+            false);
+    given(userService.getMe(1L)).willReturn(withTransform);
+
+    mockMvc
+        .perform(get("/api/users/me"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.profileImageUrl").value("https://cdn.example.com/cropped.png"))
+        .andExpect(jsonPath("$.data.originalProfileImageKey").value("profile-images/original.png"))
+        .andExpect(
+            jsonPath("$.data.originalProfileImageUrl")
+                .value("https://cdn.example.com/original.png"))
+        .andExpect(jsonPath("$.data.profileImageTransform.rotate").value(90))
+        .andExpect(jsonPath("$.data.profileImageTransform.scale").value(1.5))
+        .andExpect(jsonPath("$.data.profileImageTransform.crop.x").value(10));
+  }
+
+  @Test
+  @DisplayName("getMe_원본/transform_null_응답필드null_200")
+  void getMe_nullOriginalAndTransform_fieldsAreNull() throws Exception {
+    given(userService.getMe(1L)).willReturn(sampleUserResponse);
+
+    mockMvc
+        .perform(get("/api/users/me"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.originalProfileImageUrl").doesNotExist())
+        .andExpect(jsonPath("$.data.profileImageTransform").doesNotExist());
   }
 
   // ============ GET /api/users/{publicId} ============
@@ -182,6 +233,9 @@ class UserControllerTest {
             "anon@example.com",
             "https://cdn.example.com/default.png",
             null,
+            null,
+            null,
+            null,
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             10L,
             true,
@@ -210,6 +264,9 @@ class UserControllerTest {
             "새닉네임",
             "user@example.com",
             "https://cdn.example.com/default.png",
+            null,
+            null,
+            null,
             "새한줄소개",
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,
@@ -243,32 +300,15 @@ class UserControllerTest {
   // ============ POST /api/users/me/terms-agreement ============
 
   @Test
-  @DisplayName("agreeToTerms_본문있음_200_갱신UserResponse반환")
-  void agreeToTerms_withBody_returns200WithUserResponse() throws Exception {
-    given(userService.agreeToCurrentTerms(eq(1L), any(TermsAgreementRequest.class)))
-        .willReturn(sampleUserResponse);
-    String body = objectMapper.writeValueAsString(new TermsAgreementRequest(true));
-
-    mockMvc
-        .perform(
-            post("/api/users/me/terms-agreement")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body))
-        .andExpect(status().isOk())
-        .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.nickname").value("테스트유저"))
-        .andExpect(jsonPath("$.data.needsTermsAgreement").value(false));
-  }
-
-  @Test
-  @DisplayName("agreeToTerms_본문없음_200_갱신UserResponse반환")
-  void agreeToTerms_noBody_returns200WithUserResponse() throws Exception {
-    given(userService.agreeToCurrentTerms(eq(1L), any())).willReturn(sampleUserResponse);
+  @DisplayName("agreeToTerms_200_갱신UserResponse반환")
+  void agreeToTerms_returns200WithUserResponse() throws Exception {
+    given(userService.agreeToCurrentTerms(1L)).willReturn(sampleUserResponse);
 
     mockMvc
         .perform(post("/api/users/me/terms-agreement"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nickname").value("테스트유저"))
         .andExpect(jsonPath("$.data.needsTermsAgreement").value(false));
   }
 
@@ -398,20 +438,64 @@ class UserControllerTest {
   // ============ PATCH /api/users/me/profile-image ============
 
   @Test
-  @DisplayName("applyProfileImage_정상요청_200_UserResponse반환")
-  void applyProfileImage_validRequest_returns200() throws Exception {
-    ProfileImageUpdateRequest request =
-        new ProfileImageUpdateRequest("profile-images/uuid/photo.jpg");
-    given(userService.applyProfileImage(eq(1L), anyString())).willReturn(sampleUserResponse);
+  @DisplayName("applyProfileImage_원본키+transform포함_요청수신_서비스인자캡처_200")
+  void applyProfileImage_withOriginalAndTransform_capturesRequest_returns200() throws Exception {
+    String body =
+        "{\"key\":\"profile-images/uuid/cropped.jpg\","
+            + "\"originalKey\":\"profile-images/uuid/original.jpg\","
+            + "\"transform\":{\"rotate\":90,\"scale\":1.5,\"crop\":{\"x\":10,\"y\":20}}}";
+    given(userService.applyProfileImage(eq(1L), any(ProfileImageUpdateRequest.class)))
+        .willReturn(sampleUserResponse);
 
     mockMvc
         .perform(
             patch("/api/users/me/profile-image")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content(objectMapper.writeValueAsString(request)))
+                .content(body))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.nickname").value("테스트유저"));
+
+    ArgumentCaptor<ProfileImageUpdateRequest> captor =
+        ArgumentCaptor.forClass(ProfileImageUpdateRequest.class);
+    org.mockito.Mockito.verify(userService).applyProfileImage(eq(1L), captor.capture());
+    ProfileImageUpdateRequest captured = captor.getValue();
+    org.assertj.core.api.Assertions.assertThat(captured.key())
+        .isEqualTo("profile-images/uuid/cropped.jpg");
+    org.assertj.core.api.Assertions.assertThat(captured.originalKey())
+        .isEqualTo("profile-images/uuid/original.jpg");
+    JsonNode transform = captured.transform();
+    org.assertj.core.api.Assertions.assertThat(transform).isNotNull();
+    org.assertj.core.api.Assertions.assertThat(transform.get("rotate").asInt()).isEqualTo(90);
+    org.assertj.core.api.Assertions.assertThat(transform.get("scale").asDouble()).isEqualTo(1.5);
+    org.assertj.core.api.Assertions.assertThat(transform.get("crop").get("x").asInt())
+        .isEqualTo(10);
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_원본키+transform_null허용_요청수신_200")
+  void applyProfileImage_nullOriginalAndTransform_returns200() throws Exception {
+    String body = "{\"key\":\"profile-images/uuid/photo.jpg\"}";
+    given(userService.applyProfileImage(eq(1L), any(ProfileImageUpdateRequest.class)))
+        .willReturn(sampleUserResponse);
+
+    mockMvc
+        .perform(
+            patch("/api/users/me/profile-image")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nickname").value("테스트유저"));
+
+    ArgumentCaptor<ProfileImageUpdateRequest> captor =
+        ArgumentCaptor.forClass(ProfileImageUpdateRequest.class);
+    org.mockito.Mockito.verify(userService).applyProfileImage(eq(1L), captor.capture());
+    ProfileImageUpdateRequest captured = captor.getValue();
+    org.assertj.core.api.Assertions.assertThat(captured.key())
+        .isEqualTo("profile-images/uuid/photo.jpg");
+    org.assertj.core.api.Assertions.assertThat(captured.originalKey()).isNull();
+    org.assertj.core.api.Assertions.assertThat(captured.transform()).isNull();
   }
 
   @Test
@@ -439,6 +523,9 @@ class UserControllerTest {
             "테스트유저",
             "user@example.com",
             "https://cdn.example.com/default.png",
+            null,
+            null,
+            null,
             null,
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             100L,

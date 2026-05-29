@@ -5,11 +5,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
 import jakarta.persistence.EntityManager;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -69,7 +72,7 @@ class QuizRepositoryTest {
   @DisplayName("문제를 순서대로 조회한다")
   void findQuestionsByOrderNum() {
     User user = savedUser();
-    Quiz quiz = Quiz.builder().user(user).title("순서 퀴즈").category("etc").build();
+    Quiz quiz = Quiz.builder().user(user).title("순서 퀴즈").category("general").build();
     quizRepository.save(quiz);
 
     questionRepository.save(Question.builder().quiz(quiz).orderNum(2).answer("두번째").build());
@@ -86,7 +89,7 @@ class QuizRepositoryTest {
   @DisplayName("문제의 imageKey / answerImageKey 를 저장하고 조회한다")
   void saveAndFindImageKeys() {
     User user = savedUser();
-    Quiz quiz = Quiz.builder().user(user).title("이미지 퀴즈").category("entertainment").build();
+    Quiz quiz = Quiz.builder().user(user).title("이미지 퀴즈").category("game").build();
     quizRepository.save(quiz);
 
     questionRepository.save(
@@ -102,6 +105,59 @@ class QuizRepositoryTest {
     assertThat(questions).hasSize(1);
     assertThat(questions.get(0).getImageKey()).isEqualTo("quiz-images/uid/q.png");
     assertThat(questions.get(0).getAnswerImageKey()).isEqualTo("quiz-images/uid/a.png");
+  }
+
+  @Test
+  @DisplayName("sumPlayCountByCategory — 같은 카테고리 PUBLIC 플레이수 합산 + PRIVATE 제외")
+  void sumPlayCountByCategory_groupsAndFiltersByVisibility() {
+    User user = savedUser();
+
+    // game: PUBLIC 2건 합산 (3 + 2 = 5)
+    Quiz gameA = Quiz.builder().user(user).title("게임A").category("game").build();
+    gameA.changeVisibility(QuizVisibility.PUBLIC);
+    gameA.incrementPlayCount();
+    gameA.incrementPlayCount();
+    gameA.incrementPlayCount();
+    quizRepository.save(gameA);
+
+    Quiz gameB = Quiz.builder().user(user).title("게임B").category("game").build();
+    gameB.changeVisibility(QuizVisibility.PUBLIC);
+    gameB.incrementPlayCount();
+    gameB.incrementPlayCount();
+    quizRepository.save(gameB);
+
+    // music: PUBLIC 1건 (7)
+    Quiz music = Quiz.builder().user(user).title("음악").category("music").build();
+    music.changeVisibility(QuizVisibility.PUBLIC);
+    for (int i = 0; i < 7; i++) {
+      music.incrementPlayCount();
+    }
+    quizRepository.save(music);
+
+    // game: PRIVATE 1건 (100) — 집계에서 제외돼야 함
+    Quiz gamePrivate = Quiz.builder().user(user).title("게임비공개").category("game").build();
+    gamePrivate.changeVisibility(QuizVisibility.PRIVATE);
+    for (int i = 0; i < 100; i++) {
+      gamePrivate.incrementPlayCount();
+    }
+    quizRepository.save(gamePrivate);
+
+    em.flush();
+    em.clear();
+
+    List<QuizRepository.CategoryPlayCountRow> rows =
+        quizRepository.sumPlayCountByCategory(QuizVisibility.PUBLIC);
+
+    Map<String, Long> byCategory =
+        rows.stream()
+            .collect(
+                Collectors.toMap(
+                    QuizRepository.CategoryPlayCountRow::getCategory,
+                    QuizRepository.CategoryPlayCountRow::getPlays));
+
+    // PRIVATE 100 은 제외되고 PUBLIC 만 합산
+    assertThat(byCategory).containsEntry("game", 5L).containsEntry("music", 7L);
+    assertThat(byCategory).doesNotContainValue(105L);
   }
 
   @Test

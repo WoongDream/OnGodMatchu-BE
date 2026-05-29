@@ -27,7 +27,10 @@ public class TermsAgreementInterceptor implements HandlerInterceptor {
           "POST /api/auth/logout",
           "POST /api/auth/refresh",
           "POST /api/users/me/withdrawal-code",
-          "DELETE /api/users/me");
+          "DELETE /api/users/me",
+          "POST /api/visits",
+          "GET /api/stats/dau",
+          "GET /api/stats/visitors");
 
   @Override
   public boolean preHandle(

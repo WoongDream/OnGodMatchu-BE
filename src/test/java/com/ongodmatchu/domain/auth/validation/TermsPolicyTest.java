@@ -14,9 +14,9 @@ class TermsPolicyTest {
   // ============ enforceRequired — 정상 통과 ============
 
   @Test
-  @DisplayName("enforceRequired_이용약관과개인정보모두동의_예외없음")
-  void enforceRequired_bothAgreed_doesNotThrow() {
-    assertThatCode(() -> TermsPolicy.enforceRequired(true, true)).doesNotThrowAnyException();
+  @DisplayName("enforceRequired_이용약관_개인정보_만14세모두동의_예외없음")
+  void enforceRequired_allAgreed_doesNotThrow() {
+    assertThatCode(() -> TermsPolicy.enforceRequired(true, true, true)).doesNotThrowAnyException();
   }
 
   // ============ enforceRequired — 예외 ============
@@ -24,7 +24,7 @@ class TermsPolicyTest {
   @Test
   @DisplayName("enforceRequired_이용약관미동의_TERMS_AGREEMENT_REQUIRED예외")
   void enforceRequired_termsNotAgreed_throwsTermsAgreementRequired() {
-    assertThatThrownBy(() -> TermsPolicy.enforceRequired(false, true))
+    assertThatThrownBy(() -> TermsPolicy.enforceRequired(false, true, true))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
@@ -33,16 +33,25 @@ class TermsPolicyTest {
   @Test
   @DisplayName("enforceRequired_개인정보미동의_TERMS_AGREEMENT_REQUIRED예외")
   void enforceRequired_privacyNotAgreed_throwsTermsAgreementRequired() {
-    assertThatThrownBy(() -> TermsPolicy.enforceRequired(true, false))
+    assertThatThrownBy(() -> TermsPolicy.enforceRequired(true, false, true))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
   }
 
   @Test
-  @DisplayName("enforceRequired_이용약관과개인정보모두미동의_TERMS_AGREEMENT_REQUIRED예외")
-  void enforceRequired_neitherAgreed_throwsTermsAgreementRequired() {
-    assertThatThrownBy(() -> TermsPolicy.enforceRequired(false, false))
+  @DisplayName("enforceRequired_만14세미동의_TERMS_AGREEMENT_REQUIRED예외")
+  void enforceRequired_age14NotAgreed_throwsTermsAgreementRequired() {
+    assertThatThrownBy(() -> TermsPolicy.enforceRequired(true, true, false))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
+  }
+
+  @Test
+  @DisplayName("enforceRequired_셋다미동의_TERMS_AGREEMENT_REQUIRED예외")
+  void enforceRequired_noneAgreed_throwsTermsAgreementRequired() {
+    assertThatThrownBy(() -> TermsPolicy.enforceRequired(false, false, false))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);

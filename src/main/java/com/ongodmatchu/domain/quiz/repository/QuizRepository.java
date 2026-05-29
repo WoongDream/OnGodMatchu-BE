@@ -48,6 +48,18 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
   /** 회원탈퇴 시 "내 퀴즈도 모두 삭제" 옵션용 — 작성자 본인의 모든 Quiz 행 조회 (S3 키 정리·연관 일괄 삭제 위해 ID 도 같이 사용). */
   List<Quiz> findAllByUserId(Long userId);
 
+  /** 카테고리 목록 정렬용 — visibility 기준 카테고리별 총 플레이수 합계. 퀴즈 없는 카테고리는 행 자체가 없으므로 호출부에서 0 보정. */
+  @Query(
+      "SELECT q.category AS category, COALESCE(SUM(q.playCount), 0) AS plays "
+          + "FROM Quiz q WHERE q.visibility = :visibility GROUP BY q.category")
+  List<CategoryPlayCountRow> sumPlayCountByCategory(@Param("visibility") QuizVisibility visibility);
+
+  interface CategoryPlayCountRow {
+    String getCategory();
+
+    long getPlays();
+  }
+
   interface QuizAggregateRow {
     long getQuizCount();
 

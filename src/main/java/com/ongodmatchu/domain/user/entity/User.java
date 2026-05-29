@@ -16,6 +16,8 @@ import lombok.AccessLevel;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "users")
@@ -49,6 +51,14 @@ public class User extends BaseTimeEntity {
 
   private String profileImageKey;
 
+  /** 프로필 이미지 크롭 전 원본 key. 재편집용. null 이면 원본 미보존(자동 생성 SVG 또는 레거시). */
+  private String originalProfileImageKey;
+
+  /** 프로필 이미지 크롭/변환 파라미터 (FE 소유 opaque JSON). */
+  @JdbcTypeCode(SqlTypes.JSON)
+  @Column(columnDefinition = "jsonb")
+  private String profileImageTransform;
+
   @Column(length = 100)
   private String bio;
 
@@ -70,10 +80,10 @@ public class User extends BaseTimeEntity {
 
   private String privacyVersion;
 
-  @Column(nullable = false)
-  private boolean marketingAgreed = false;
-
   private LocalDateTime termsAgreedAt;
+
+  @Column(nullable = false)
+  private boolean agreedToAge14 = false;
 
   @Builder
   private User(
@@ -120,8 +130,18 @@ public class User extends BaseTimeEntity {
     this.profileImageKey = profileImageKey;
   }
 
+  /** 크롭 결과 key + 원본 key + transform 을 함께 갱신 (재편집 업로드 시). */
+  public void updateProfileImage(
+      String profileImageKey, String originalProfileImageKey, String profileImageTransform) {
+    this.profileImageKey = profileImageKey;
+    this.originalProfileImageKey = originalProfileImageKey;
+    this.profileImageTransform = profileImageTransform;
+  }
+
   public void clearProfileImage() {
     this.profileImageKey = null;
+    this.originalProfileImageKey = null;
+    this.profileImageTransform = null;
   }
 
   public void updatePassword(String encodedPassword) {
@@ -133,11 +153,11 @@ public class User extends BaseTimeEntity {
   }
 
   /** 가입 시점 약관 동의 기록. 재동의 플로우는 후속 작업. */
-  public void agreeToTerms(String termsVersion, String privacyVersion, boolean marketingAgreed) {
+  public void agreeToTerms(String termsVersion, String privacyVersion, boolean agreedToAge14) {
     this.termsVersion = termsVersion;
     this.privacyVersion = privacyVersion;
-    this.marketingAgreed = marketingAgreed;
     this.termsAgreedAt = LocalDateTime.now();
+    this.agreedToAge14 = agreedToAge14;
   }
 
   public void withdraw(String anonymizedEmail, String anonymizedNickname) {
@@ -146,6 +166,8 @@ public class User extends BaseTimeEntity {
     this.password = null;
     this.bio = null;
     this.profileImageKey = null;
+    this.originalProfileImageKey = null;
+    this.profileImageTransform = null;
     this.isProfilePublic = false;
     this.isActive = false;
     this.deletedAt = LocalDateTime.now();

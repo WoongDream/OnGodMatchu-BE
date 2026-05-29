@@ -80,7 +80,8 @@ public class AuthService {
   public SignupResponse signup(SignupRequest request) {
     TermsPolicy.enforceRequired(
         Boolean.TRUE.equals(request.agreedToTerms()),
-        Boolean.TRUE.equals(request.agreedToPrivacy()));
+        Boolean.TRUE.equals(request.agreedToPrivacy()),
+        Boolean.TRUE.equals(request.agreedToAge14()));
 
     if (userRepository.existsByEmail(request.email())) {
       throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS);
@@ -116,7 +117,7 @@ public class AuthService {
     user.agreeToTerms(
         TermsPolicy.CURRENT_TERMS_VERSION,
         TermsPolicy.CURRENT_PRIVACY_VERSION,
-        request.marketingOptIn());
+        Boolean.TRUE.equals(request.agreedToAge14()));
     try {
       userRepository.saveAndFlush(user);
     } catch (DataIntegrityViolationException e) {

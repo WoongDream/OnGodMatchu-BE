@@ -5,12 +5,18 @@ import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizShareResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
+import com.ongodmatchu.domain.quiz.dto.ScoreDistributionResponse;
+import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
 import com.ongodmatchu.domain.quiz.service.QuizService;
+import com.ongodmatchu.domain.quiz.service.QuizShareService;
 import com.ongodmatchu.domain.quiz.service.QuizStarService;
 import com.ongodmatchu.global.response.ApiResponse;
+import com.ongodmatchu.global.web.AnonIdCookieFilter;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -42,20 +48,32 @@ public class QuizController {
 
   private final QuizService quizService;
   private final QuizStarService quizStarService;
+  private final QuizShareService quizShareService;
+  private final QuizAttemptService quizAttemptService;
 
-  @Operation(summary = "카테고리 목록", description = "퀴즈 카테고리 9종 (영문 키 + 한국어 라벨). 화이트리스트")
+  @Operation(
+      summary = "카테고리 목록",
+      description = "퀴즈 카테고리 10종 (영문 키 + 한국어 라벨). 공개 퀴즈 총 플레이수 내림차순 정렬 (동률은 기본 순서)")
   @GetMapping("/categories")
   public ResponseEntity<ApiResponse<List<CategoryResponse>>> getCategories() {
     return ResponseEntity.ok(ApiResponse.ok(quizService.getCategories()));
   }
 
-  @Operation(summary = "공개 퀴즈 목록", description = "PUBLIC 퀴즈만. category 파라미터로 필터. 비로그인 허용")
+  @Operation(
+      summary = "공개 퀴즈 목록",
+      description =
+          "PUBLIC 퀴즈만. category 파라미터로 필터. 비로그인 허용. 기본 정렬 = playCount DESC, createdAt DESC (tiebreaker). 인증 시 isStarred 채움, 비로그인은 null")
   @GetMapping
   public ResponseEntity<ApiResponse<Page<QuizResponse>>> getQuizList(
       @RequestParam(required = false) String category,
-      @PageableDefault(size = 12, sort = "createdAt", direction = Sort.Direction.DESC)
-          Pageable pageable) {
-    return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizList(category, pageable)));
+      @PageableDefault(
+              size = 12,
+              sort = {"playCount", "createdAt"},
+              direction = Sort.Direction.DESC)
+          Pageable pageable,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
+    return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizList(category, viewerId, pageable)));
   }
 
   @Operation(
@@ -66,6 +84,19 @@ public class QuizController {
       @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
     Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
     return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizDetail(quizId, viewerId)));
+  }
+
+  @Operation(
+      summary = "퀴즈 점수 분포",
+      description =
+          "전체 응시자 수 + 평균 점수 + score 0~totalQuestions 전 칸 분포 (응시 없는 score 도 count=0). 비로그인 허용."
+              + " PRIVATE 퀴즈는 본인만 조회 가능 (외부 QUIZ_NOT_FOUND)")
+  @GetMapping("/{quizId}/score-distribution")
+  public ResponseEntity<ApiResponse<ScoreDistributionResponse>> getScoreDistribution(
+      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
+    return ResponseEntity.ok(
+        ApiResponse.ok(quizAttemptService.getScoreDistribution(quizId, viewerId)));
   }
 
   @Operation(
@@ -92,20 +123,25 @@ public class QuizController {
   }
 
   @Operation(
-      summary = "공유 카운터 증가",
-      description = "비로그인 허용. PRIVATE 퀴즈는 본인만 호출 가능 (외부는 QUIZ_NOT_FOUND)")
+      summary = "공유 카운터 증가 (사용자/익명 단위 중복 방지)",
+      description =
+          "로그인 사용자는 user_id, 비로그인은 anon_id 쿠키로 식별. 같은 식별자는 같은 퀴즈에 대해 1회만 카운트 증가. "
+              + "이미 공유한 식별자면 alreadyShared=true 로 응답 (카운트는 그대로). "
+              + "PRIVATE 퀴즈는 본인만 호출 가능 (외부는 QUIZ_NOT_FOUND).")
   @PostMapping("/{quizId}/share")
-  public ResponseEntity<ApiResponse<Void>> share(
-      @PathVariable Long quizId, @AuthenticationPrincipal CustomUserDetails userDetails) {
-    Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
-    quizService.incrementShareCount(quizId, viewerId);
-    return ResponseEntity.ok(ApiResponse.ok());
+  public ResponseEntity<ApiResponse<QuizShareResponse>> share(
+      @PathVariable Long quizId,
+      HttpServletRequest httpRequest,
+      @AuthenticationPrincipal CustomUserDetails userDetails) {
+    Long userId = userDetails != null ? userDetails.getUser().getId() : null;
+    String anonId = (String) httpRequest.getAttribute(AnonIdCookieFilter.REQUEST_ATTRIBUTE);
+    return ResponseEntity.ok(ApiResponse.ok(quizShareService.recordShare(quizId, userId, anonId)));
   }
 
   @Operation(
-      summary = "퀴즈 메타 수정",
+      summary = "퀴즈 메타 + questions 수정",
       description =
-          "title/description/category/thumbnailKey/visibility 옵셔널. visibility 토글 endpoint 가 별도가 아님 — 여기서 처리. 가능 에러: QUIZ_NOT_FOUND(404), QUIZ_FORBIDDEN(403), INVALID_CATEGORY(400)")
+          "title/description/category/thumbnailKey/visibility 옵셔널. questions 도 옵셔널 — null 이면 미변경, 배열이면 id 유지 PUT diff (id 있음=기존 갱신, 없음=신규 추가, payload 에서 빠진 기존 id=삭제). orderNum 은 payload 순서로 재할당. plays/stars/comments/shares 카운터는 보존, questions 만 변경돼도 updatedAt 갱신. 가능 에러: QUIZ_NOT_FOUND(404), QUIZ_FORBIDDEN(403), INVALID_CATEGORY(400), QUESTION_NOT_FOUND(404), INVALID_UPLOAD_KEY(400), UPLOAD_VERIFICATION_FAILED(422)")
   @PatchMapping("/{quizId}")
   public ResponseEntity<ApiResponse<QuizResponse>> updateQuiz(
       @PathVariable Long quizId,

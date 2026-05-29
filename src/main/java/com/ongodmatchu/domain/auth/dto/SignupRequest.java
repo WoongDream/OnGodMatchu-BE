@@ -18,9 +18,4 @@ public record SignupRequest(
         String code,
     @AssertTrue(message = "이용약관에 동의해야 합니다.") @NotNull Boolean agreedToTerms,
     @AssertTrue(message = "개인정보처리방침에 동의해야 합니다.") @NotNull Boolean agreedToPrivacy,
-    Boolean agreedToMarketing) {
-
-  public boolean marketingOptIn() {
-    return agreedToMarketing != null && agreedToMarketing;
-  }
-}
+    @AssertTrue(message = "만 14세 이상이어야 가입할 수 있습니다.") @NotNull Boolean agreedToAge14) {}

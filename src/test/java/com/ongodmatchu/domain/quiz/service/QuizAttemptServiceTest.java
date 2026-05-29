@@ -7,6 +7,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 
 import com.ongodmatchu.domain.question.entity.Question;
@@ -15,10 +16,12 @@ import com.ongodmatchu.domain.quiz.dto.AttemptAnswerRequest;
 import com.ongodmatchu.domain.quiz.dto.AttemptCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.AttemptListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.AttemptResultResponse;
+import com.ongodmatchu.domain.quiz.dto.ScoreDistributionResponse;
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizAttempt;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.repository.QuizAttemptRepository;
+import com.ongodmatchu.domain.quiz.repository.QuizAttemptRepository.ScoreBucketRow;
 import com.ongodmatchu.domain.quiz.repository.QuizRepository;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
@@ -309,6 +312,45 @@ class QuizAttemptServiceTest {
     assertThat(result.score()).isEqualTo(1);
     assertThat(result.results().get(0).correct()).isTrue();
     then(aiGradingService).should().grade("수도", "서울");
+  }
+
+  @Test
+  @DisplayName("submit_빈답_AI호출_skip_무조건_오답")
+  void submit_blankUserAnswer_skipsAi_alwaysIncorrect() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    Question q = testQuestion(quiz, 10L, "정답");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
+
+    AttemptCreateRequest request =
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "")));
+
+    AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
+
+    assertThat(result.score()).isZero();
+    assertThat(result.results().get(0).correct()).isFalse();
+    assertThat(result.results().get(0).userAnswer()).isEmpty();
+    then(aiGradingService).should(never()).grade(any(), any());
+  }
+
+  @Test
+  @DisplayName("submit_공백만_답_AI호출_skip_오답")
+  void submit_whitespaceOnlyAnswer_skipsAi_incorrect() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    Question q = testQuestion(quiz, 10L, "정답");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
+
+    AttemptCreateRequest request =
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "   ")));
+
+    AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
+
+    assertThat(result.score()).isZero();
+    assertThat(result.results().get(0).correct()).isFalse();
+    then(aiGradingService).should(never()).grade(any(), any());
   }
 
   @Test
@@ -694,5 +736,244 @@ class QuizAttemptServiceTest {
         .should()
         .findByUserIdOrderByCompletedAtDesc(eq(2L), captor.capture());
     assertThat(captor.getValue().getPageSize()).isEqualTo(50);
+  }
+
+  // ─── submit() topPercentile ─────────────────────────────────────────────────
+
+  /** submit() 호출 시 공통으로 필요한 mock 셋업 (PUBLIC 퀴즈, 단일 정답 질문, 정답 입력). */
+  private AttemptResultResponse submitSingleCorrectAttempt(
+      User owner, Quiz quiz, Long viewerUserId, long savedAttemptId) {
+    Question q = testQuestion(quiz, 10L, "정답");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
+    if (viewerUserId != null) {
+      given(userRepository.findById(viewerUserId)).willReturn(Optional.of(owner));
+    }
+    given(quizAttemptRepository.save(any(QuizAttempt.class)))
+        .willAnswer(
+            inv -> {
+              QuizAttempt a = inv.getArgument(0);
+              ReflectionTestUtils.setField(a, "id", savedAttemptId);
+              return a;
+            });
+
+    AttemptCreateRequest request =
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+    return quizAttemptService.submit(1L, viewerUserId, request);
+  }
+
+  @Test
+  @DisplayName("submit_첫응시자(countByQuizId=1)_topPercentile_null")
+  void submit_firstAttempter_topPercentileNull() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizAttemptRepository.countByQuizId(1L)).willReturn(1L);
+
+    AttemptResultResponse result = submitSingleCorrectAttempt(owner, quiz, null, 100L);
+
+    assertThat(result.topPercentile()).isNull();
+    then(quizAttemptRepository).should(never()).countByQuizIdAndScoreGreaterThan(any(), eq(1));
+    then(quizAttemptRepository).should(never()).countByQuizIdAndScore(any(), eq(1));
+  }
+
+  @Test
+  @DisplayName("submit_응시자2명_본인단독최고점_topPercentile_25_0")
+  void submit_twoAttempts_soloTop_topPercentile25() {
+    // total=2, score=1, gt=0, eq=1 → (0 + 1/2.0)/2 * 100 = 25.0
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizAttemptRepository.countByQuizId(1L)).willReturn(2L);
+    given(quizAttemptRepository.countByQuizIdAndScoreGreaterThan(1L, 1)).willReturn(0L);
+    given(quizAttemptRepository.countByQuizIdAndScore(1L, 1)).willReturn(1L);
+
+    AttemptResultResponse result = submitSingleCorrectAttempt(owner, quiz, null, 100L);
+
+    assertThat(result.topPercentile()).isEqualTo(25.0);
+  }
+
+  @Test
+  @DisplayName("submit_응시자4명_동률_중간처리_topPercentile_50_0")
+  void submit_fourAttempts_tieMiddleHandling_topPercentile50() {
+    // total=4, score=1, gt=1, eq=2(본인 포함) → (1 + 2/2.0)/4 * 100 = 50.0
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizAttemptRepository.countByQuizId(1L)).willReturn(4L);
+    given(quizAttemptRepository.countByQuizIdAndScoreGreaterThan(1L, 1)).willReturn(1L);
+    given(quizAttemptRepository.countByQuizIdAndScore(1L, 1)).willReturn(2L);
+
+    AttemptResultResponse result = submitSingleCorrectAttempt(owner, quiz, null, 100L);
+
+    assertThat(result.topPercentile()).isEqualTo(50.0);
+  }
+
+  @Test
+  @DisplayName("submit_응시자10명_단독최고점_topPercentile_5_0")
+  void submit_tenAttempts_soloTop_topPercentile5() {
+    // total=10, score=1, gt=0, eq=1 → (0 + 0.5)/10 * 100 = 5.0
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizAttemptRepository.countByQuizId(1L)).willReturn(10L);
+    given(quizAttemptRepository.countByQuizIdAndScoreGreaterThan(1L, 1)).willReturn(0L);
+    given(quizAttemptRepository.countByQuizIdAndScore(1L, 1)).willReturn(1L);
+
+    AttemptResultResponse result = submitSingleCorrectAttempt(owner, quiz, null, 100L);
+
+    assertThat(result.topPercentile()).isEqualTo(5.0);
+  }
+
+  @Test
+  @DisplayName("submit_응시자100명_소수1자리_반올림")
+  void submit_hundredAttempts_roundedToOneDecimal() {
+    // total=100, score=1, gt=33, eq=4(본인 포함) → (33 + 4/2.0)/100 * 100 = 35.0
+    // 35.0 은 정확하지만 raw 식 (33 + 2.0) / 100 * 100 = 35.0 — Math.round 경로 검증 목적
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizAttemptRepository.countByQuizId(1L)).willReturn(100L);
+    given(quizAttemptRepository.countByQuizIdAndScoreGreaterThan(1L, 1)).willReturn(33L);
+    given(quizAttemptRepository.countByQuizIdAndScore(1L, 1)).willReturn(4L);
+
+    AttemptResultResponse result = submitSingleCorrectAttempt(owner, quiz, null, 100L);
+
+    // (33 + 2.0)/100 * 100 = 35.0
+    assertThat(result.topPercentile()).isEqualTo(35.0);
+  }
+
+  @Test
+  @DisplayName("submit_응시자3명_반올림_소수1자리_검증")
+  void submit_threeAttempts_roundedToOneDecimal() {
+    // total=3, score=1, gt=1, eq=1 → (1 + 0.5)/3 * 100 = 50.0
+    // raw = 150.0/3 = 50.0 정확
+    // 다른 케이스: total=3, gt=0, eq=2 → (0 + 1.0)/3 * 100 = 33.33... → 33.3
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizAttemptRepository.countByQuizId(1L)).willReturn(3L);
+    given(quizAttemptRepository.countByQuizIdAndScoreGreaterThan(1L, 1)).willReturn(0L);
+    given(quizAttemptRepository.countByQuizIdAndScore(1L, 1)).willReturn(2L);
+
+    AttemptResultResponse result = submitSingleCorrectAttempt(owner, quiz, null, 100L);
+
+    // Math.round(33.333... * 10) / 10 = 333 / 10.0 = 33.3
+    assertThat(result.topPercentile()).isEqualTo(33.3);
+  }
+
+  // ─── getScoreDistribution() ─────────────────────────────────────────────────
+
+  private ScoreBucketRow stubRow(int score, long count) {
+    ScoreBucketRow row = mock(ScoreBucketRow.class);
+    given(row.getScore()).willReturn(score);
+    given(row.getCount()).willReturn(count);
+    return row;
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_존재하지않는퀴즈_QUIZ_NOT_FOUND_throws")
+  void getScoreDistribution_quizNotFound_throws() {
+    given(quizRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> quizAttemptService.getScoreDistribution(99L, 1L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_PRIVATE외부뷰어_QUIZ_NOT_FOUND_throws")
+  void getScoreDistribution_privateQuiz_externalViewer_throws() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+
+    assertThatThrownBy(() -> quizAttemptService.getScoreDistribution(1L, 99L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.QUIZ_NOT_FOUND);
+
+    then(questionRepository).should(never()).countByQuizId(any());
+    then(quizAttemptRepository).should(never()).findScoreDistributionByQuizId(any());
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_PRIVATE본인_정상응답")
+  void getScoreDistribution_privateQuiz_owner_success() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PRIVATE);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.countByQuizId(1L)).willReturn(3L);
+    List<ScoreBucketRow> rows = List.of(stubRow(2, 1L), stubRow(3, 1L));
+    given(quizAttemptRepository.findScoreDistributionByQuizId(1L)).willReturn(rows);
+
+    ScoreDistributionResponse result = quizAttemptService.getScoreDistribution(1L, 1L);
+
+    assertThat(result.totalAttempts()).isEqualTo(2L);
+    // sum = 2*1 + 3*1 = 5, avg = 5/2 = 2.5
+    assertThat(result.averageScore()).isEqualTo(2.5);
+    // 0..3 = 4 칸
+    assertThat(result.distribution()).hasSize(4);
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_빈응시_distribution_전부_0_average_0")
+  void getScoreDistribution_noAttempts_emptyDistributionAvgZero() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.countByQuizId(1L)).willReturn(3L);
+    given(quizAttemptRepository.findScoreDistributionByQuizId(1L)).willReturn(List.of());
+
+    ScoreDistributionResponse result = quizAttemptService.getScoreDistribution(1L, null);
+
+    assertThat(result.totalAttempts()).isZero();
+    assertThat(result.averageScore()).isEqualTo(0.0);
+    assertThat(result.distribution()).hasSize(4);
+    for (int i = 0; i <= 3; i++) {
+      assertThat(result.distribution().get(i).score()).isEqualTo(i);
+      assertThat(result.distribution().get(i).count()).isZero();
+    }
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_sparse_score_0~N_빈칸도_0_채움")
+  void getScoreDistribution_sparseScores_fillsEmptyBucketsWithZero() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.countByQuizId(1L)).willReturn(5L);
+    // 응시는 score=2 와 score=5 에만
+    List<ScoreBucketRow> rows = List.of(stubRow(2, 3L), stubRow(5, 2L));
+    given(quizAttemptRepository.findScoreDistributionByQuizId(1L)).willReturn(rows);
+
+    ScoreDistributionResponse result = quizAttemptService.getScoreDistribution(1L, null);
+
+    assertThat(result.totalAttempts()).isEqualTo(5L);
+    // sum = 2*3 + 5*2 = 16, avg = 16/5 = 3.2
+    assertThat(result.averageScore()).isEqualTo(3.2);
+    // 0..5 = 6 칸
+    assertThat(result.distribution()).hasSize(6);
+    assertThat(result.distribution().get(0).score()).isZero();
+    assertThat(result.distribution().get(0).count()).isZero();
+    assertThat(result.distribution().get(1).count()).isZero();
+    assertThat(result.distribution().get(2).count()).isEqualTo(3L);
+    assertThat(result.distribution().get(3).count()).isZero();
+    assertThat(result.distribution().get(4).count()).isZero();
+    assertThat(result.distribution().get(5).count()).isEqualTo(2L);
+  }
+
+  @Test
+  @DisplayName("getScoreDistribution_평균_소수1자리_반올림")
+  void getScoreDistribution_averageRoundedToOneDecimal() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.countByQuizId(1L)).willReturn(3L);
+    // sum = 1*1 + 2*1 + 3*1 = 6, total=3 → avg=2.0 정확하므로
+    // 반올림 검증을 위해 다른 조합: sum = 1*2 + 2*1 = 4, total=3 → 4/3 = 1.333... → 1.3
+    List<ScoreBucketRow> rows = List.of(stubRow(1, 2L), stubRow(2, 1L));
+    given(quizAttemptRepository.findScoreDistributionByQuizId(1L)).willReturn(rows);
+
+    ScoreDistributionResponse result = quizAttemptService.getScoreDistribution(1L, null);
+
+    assertThat(result.totalAttempts()).isEqualTo(3L);
+    // Math.round(4 * 10.0 / 3) / 10.0 = Math.round(13.333) / 10.0 = 13 / 10.0 = 1.3
+    assertThat(result.averageScore()).isEqualTo(1.3);
   }
 }

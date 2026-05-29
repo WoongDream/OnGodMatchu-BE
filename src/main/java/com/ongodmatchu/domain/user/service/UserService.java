@@ -5,8 +5,8 @@ import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.auth.validation.TermsPolicy;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
+import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
-import com.ongodmatchu.domain.user.dto.TermsAgreementRequest;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -21,6 +21,7 @@ import com.ongodmatchu.domain.user.validation.NicknameNormalizer;
 import com.ongodmatchu.domain.user.validation.NicknamePolicy;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
+import com.ongodmatchu.global.util.ImageTransformPolicy;
 import com.ongodmatchu.infra.s3.PresignedUrlRequest;
 import com.ongodmatchu.infra.s3.PresignedUrlResponse;
 import com.ongodmatchu.infra.s3.S3Service;
@@ -68,12 +69,9 @@ public class UserService {
    * FE 가 별도 GET /me 없이 store 동기화 가능.
    */
   @Transactional
-  public UserResponse agreeToCurrentTerms(Long userId, TermsAgreementRequest request) {
+  public UserResponse agreeToCurrentTerms(Long userId) {
     User user = findUserById(userId);
-    user.agreeToTerms(
-        TermsPolicy.CURRENT_TERMS_VERSION,
-        TermsPolicy.CURRENT_PRIVACY_VERSION,
-        request != null && request.marketingOptIn());
+    user.agreeToTerms(TermsPolicy.CURRENT_TERMS_VERSION, TermsPolicy.CURRENT_PRIVACY_VERSION, true);
     return toResponse(user);
   }
 
@@ -89,7 +87,10 @@ public class UserService {
     if (!user.isProfilePublic() && !isOwner) {
       return PublicUserResponse.from(user, resolveImageUrl(user));
     }
-    return toResponse(user);
+    // 공개 프로필을 외부 뷰어가 볼 때는 원본/transform 미노출 (소유자만 재편집).
+    return isOwner
+        ? toResponse(user)
+        : UserResponse.from(user, resolveImageUrl(user), calcActiveDays(user.getCreatedAt()));
   }
 
   @Transactional
@@ -150,19 +151,43 @@ public class UserService {
   }
 
   @Transactional
-  public UserResponse applyProfileImage(Long userId, String key) {
+  public UserResponse applyProfileImage(Long userId, ProfileImageUpdateRequest request) {
+    String key = request.key();
+    String originalKey = request.originalKey();
+    requireProfileKey(key);
+    User user = findUserById(userId);
+    s3Service.completeUpload(userId, key);
+    if (originalKey != null && !originalKey.equals(key)) {
+      requireProfileKey(originalKey);
+      s3Service.completeUpload(userId, originalKey);
+    }
+
+    String previousKey = user.getProfileImageKey();
+    String previousOriginal = user.getOriginalProfileImageKey();
+    user.updateProfileImage(
+        key, originalKey, ImageTransformPolicy.toStoredJson(request.transform()));
+    deleteIfUnused(previousKey, key, originalKey);
+    deleteIfUnused(previousOriginal, key, originalKey);
+    return toResponse(user);
+  }
+
+  private void requireProfileKey(String key) {
     if (key == null || !key.startsWith(UploadPolicy.PROFILE_IMAGES_PREFIX + "/")) {
       throw new BusinessException(ErrorCode.INVALID_UPLOAD_KEY);
     }
-    User user = findUserById(userId);
-    s3Service.completeUpload(userId, key);
+  }
 
-    String previousKey = user.getProfileImageKey();
-    user.updateProfileImageKey(key);
-    if (previousKey != null && !previousKey.equals(key)) {
-      s3Service.deleteQuietly(previousKey);
+  /** key 가 keptKeys 중 어느 것과도 같지 않으면 best-effort 삭제. */
+  private void deleteIfUnused(String key, String... keptKeys) {
+    if (key == null) {
+      return;
     }
-    return toResponse(user);
+    for (String kept : keptKeys) {
+      if (key.equals(kept)) {
+        return;
+      }
+    }
+    s3Service.deleteQuietly(key);
   }
 
   /** "기본 이미지" 버튼 — 호출마다 새 랜덤 색 SVG 를 생성해 적용한다. 이전 키는 best-effort 삭제. */
@@ -170,6 +195,7 @@ public class UserService {
   public UserResponse regenerateDefaultProfileImage(Long userId) {
     User user = findUserById(userId);
     String previousKey = user.getProfileImageKey();
+    String previousOriginal = user.getOriginalProfileImageKey();
     String newKey =
         UploadPolicy.PROFILE_IMAGES_PREFIX
             + "/"
@@ -179,10 +205,10 @@ public class UserService {
             + ".svg";
     byte[] body = profileImageGenerator.generateSvg(user.getNickname());
     s3Service.putObject(newKey, body, ProfileImageGenerator.CONTENT_TYPE);
-    user.updateProfileImageKey(newKey);
-    if (previousKey != null) {
-      s3Service.deleteQuietly(previousKey);
-    }
+    // 기본 이미지는 원본/transform 없음 → 함께 비운다.
+    user.updateProfileImage(newKey, null, null);
+    deleteIfUnused(previousKey, newKey);
+    deleteIfUnused(previousOriginal, newKey, previousKey);
     return toResponse(user);
   }
 
@@ -245,20 +271,36 @@ public class UserService {
   public UserResponse deleteProfileImage(Long userId) {
     User user = findUserById(userId);
     String previousKey = user.getProfileImageKey();
-    if (previousKey != null) {
+    String previousOriginal = user.getOriginalProfileImageKey();
+    if (previousKey != null || previousOriginal != null) {
       user.clearProfileImage();
-      s3Service.deleteQuietly(previousKey);
+      if (previousKey != null) {
+        s3Service.deleteQuietly(previousKey);
+      }
+      if (previousOriginal != null && !previousOriginal.equals(previousKey)) {
+        s3Service.deleteQuietly(previousOriginal);
+      }
     }
     return toResponse(user);
   }
 
   private UserResponse toResponse(User user) {
-    return UserResponse.from(user, resolveImageUrl(user), calcActiveDays(user.getCreatedAt()));
+    return UserResponse.from(
+        user,
+        resolveImageUrl(user),
+        resolveOriginalImageUrl(user),
+        calcActiveDays(user.getCreatedAt()));
   }
 
   private String resolveImageUrl(User user) {
     String key = user.getProfileImageKey();
     return key == null ? defaultProfileImageUrl : s3Service.generateViewUrl(key).viewUrl();
+  }
+
+  /** 원본 프로필 이미지 presigned URL (재편집용). 원본 미보존이면 null (default fallback 없음). */
+  private String resolveOriginalImageUrl(User user) {
+    String key = user.getOriginalProfileImageKey();
+    return key == null ? null : s3Service.generateViewUrl(key).viewUrl();
   }
 
   private long calcActiveDays(LocalDateTime createdAt) {
