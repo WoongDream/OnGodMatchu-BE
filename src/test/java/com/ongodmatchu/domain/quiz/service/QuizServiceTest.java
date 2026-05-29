@@ -1847,6 +1847,24 @@ class QuizServiceTest {
   }
 
   @Test
+  @DisplayName("deleteQuiz_연관데이터(댓글/시도/스타)삭제_FK제약회귀가드")
+  void deleteQuiz_deletesAssociatedCommentsAttemptsStars() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of());
+    willDoNothing().given(questionRepository).deleteByQuizId(1L);
+
+    quizService.deleteQuiz(1L, 1L);
+
+    then(quizCommentRepository).should().deleteByQuizIdIn(List.of(1L));
+    then(quizAttemptRepository).should().deleteByQuizIdIn(List.of(1L));
+    then(quizStarRepository).should().deleteByQuizIdIn(List.of(1L));
+    then(questionRepository).should().deleteByQuizId(1L);
+    then(quizRepository).should().delete(quiz);
+  }
+
+  @Test
   @DisplayName("deleteQuiz_썸네일있음_S3삭제호출")
   void deleteQuiz_withThumbnail_deletesS3Object() {
     User user = testUser();

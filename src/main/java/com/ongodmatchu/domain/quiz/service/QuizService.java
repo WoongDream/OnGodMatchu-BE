@@ -547,6 +547,10 @@ public class QuizService {
     Quiz quiz = findQuizOwned(userId, quizId);
 
     List<Question> questions = questionRepository.findByQuizIdOrderByOrderNum(quizId);
+    List<Long> quizIds = List.of(quizId);
+    quizCommentRepository.deleteByQuizIdIn(quizIds);
+    quizAttemptRepository.deleteByQuizIdIn(quizIds);
+    quizStarRepository.deleteByQuizIdIn(quizIds);
     questionRepository.deleteByQuizId(quizId);
     quizRepository.delete(quiz);
 
