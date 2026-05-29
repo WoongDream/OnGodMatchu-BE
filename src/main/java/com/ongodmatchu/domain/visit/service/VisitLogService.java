@@ -83,7 +83,7 @@ public class VisitLogService {
     }
 
     long todayCount = counts.getOrDefault(today, 0L);
-    long total = visitLogRepository.countDistinctVisitorsAll();
+    long total = visitLogRepository.countTotalVisitors();
     return new VisitorSummaryResponse(todayCount, total, daily);
   }
 }

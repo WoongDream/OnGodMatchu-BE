@@ -237,7 +237,7 @@ class VisitLogServiceTest {
       LocalDate today = LocalDate.now(TimeFormat.SERVER_OFFSET);
       given(visitLogRepository.countDistinctVisitorsDaily(any(), any()))
           .willReturn(Collections.emptyList());
-      given(visitLogRepository.countDistinctVisitorsAll()).willReturn(0L);
+      given(visitLogRepository.countTotalVisitors()).willReturn(0L);
 
       VisitorSummaryResponse response = visitLogService.getVisitorSummary();
 
@@ -265,7 +265,7 @@ class VisitLogServiceTest {
       LocalDate today = LocalDate.now(TimeFormat.SERVER_OFFSET);
       List<DailyVisitorRow> rows = List.of(row(today, 63L));
       given(visitLogRepository.countDistinctVisitorsDaily(any(), any())).willReturn(rows);
-      given(visitLogRepository.countDistinctVisitorsAll()).willReturn(1000L);
+      given(visitLogRepository.countTotalVisitors()).willReturn(1000L);
 
       VisitorSummaryResponse response = visitLogService.getVisitorSummary();
 
@@ -287,7 +287,7 @@ class VisitLogServiceTest {
       LocalDate threeDaysAgo = today.minusDays(3);
       List<DailyVisitorRow> rows = List.of(row(fiveDaysAgo, 11L), row(threeDaysAgo, 22L));
       given(visitLogRepository.countDistinctVisitorsDaily(any(), any())).willReturn(rows);
-      given(visitLogRepository.countDistinctVisitorsAll()).willReturn(500L);
+      given(visitLogRepository.countTotalVisitors()).willReturn(500L);
 
       VisitorSummaryResponse response = visitLogService.getVisitorSummary();
 
@@ -315,13 +315,13 @@ class VisitLogServiceTest {
       LocalDate today = LocalDate.now(TimeFormat.SERVER_OFFSET);
       List<DailyVisitorRow> rows = List.of(row(today.minusDays(2), 5L));
       given(visitLogRepository.countDistinctVisitorsDaily(any(), any())).willReturn(rows);
-      given(visitLogRepository.countDistinctVisitorsAll()).willReturn(777L);
+      given(visitLogRepository.countTotalVisitors()).willReturn(777L);
 
       VisitorSummaryResponse response = visitLogService.getVisitorSummary();
 
       assertThat(response.today()).isZero();
       assertThat(response.total()).isEqualTo(777L);
-      then(visitLogRepository).should().countDistinctVisitorsAll();
+      then(visitLogRepository).should().countTotalVisitors();
     }
 
     @Test
@@ -329,7 +329,7 @@ class VisitLogServiceTest {
     void dailySizeAlwaysSeven() {
       given(visitLogRepository.countDistinctVisitorsDaily(any(), any()))
           .willReturn(Collections.emptyList());
-      given(visitLogRepository.countDistinctVisitorsAll()).willReturn(0L);
+      given(visitLogRepository.countTotalVisitors()).willReturn(0L);
 
       VisitorSummaryResponse response = visitLogService.getVisitorSummary();
 

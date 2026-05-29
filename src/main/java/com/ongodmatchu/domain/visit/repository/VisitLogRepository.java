@@ -22,11 +22,19 @@ public interface VisitLogRepository extends JpaRepository<VisitLog, Long> {
       nativeQuery = true)
   long countDistinctVisitors(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
 
-  /** 전체 누적 고유 방문자 수 (기간 필터 없음). 데이터셋이 커지면 daily snapshot 으로 전환 필요. */
+  /**
+   * 전 기간 누적 방문자 수 — 일자별 고유 방문자 수(서버 KST)를 모든 날에 대해 합산. 같은 사람이 다른 날 방문하면 날마다 1씩 잡혀, 헤더 TOTAL = 일자별
+   * 방문자수의 합 ("어제 4 + 오늘 3 = 7"). 데이터셋이 커지면 daily snapshot 으로 전환 필요.
+   */
   @Query(
-      value = "SELECT COUNT(DISTINCT COALESCE(user_id::text, anon_id)) FROM visit_log",
+      value =
+          "SELECT COALESCE(SUM(c), 0)::bigint FROM ("
+              + "  SELECT COUNT(DISTINCT COALESCE(user_id::text, anon_id)) AS c "
+              + "  FROM visit_log "
+              + "  GROUP BY date_trunc('day', visited_at)"
+              + ") daily",
       nativeQuery = true)
-  long countDistinctVisitorsAll();
+  long countTotalVisitors();
 
   /**
    * [start, end) 구간 일자별 고유 방문자 수 (서버 KST). visited_at 이 LocalDateTime (서버 timezone) 으로 저장되므로
