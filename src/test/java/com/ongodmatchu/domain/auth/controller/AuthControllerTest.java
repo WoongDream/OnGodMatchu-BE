@@ -104,6 +104,9 @@ class AuthControllerTest {
                 "u@example.com",
                 "https://cdn.example.com/default.png",
                 null,
+                null,
+                null,
+                null,
                 java.time.OffsetDateTime.now(),
                 0L,
                 true,
@@ -115,7 +118,7 @@ class AuthControllerTest {
 
     String body =
         objectMapper.writeValueAsString(
-            new SignupRequest("u@example.com", "닉네임", "password123", "123456", true, true, false));
+            new SignupRequest("u@example.com", "닉네임", "password123", "123456", true, true, true));
 
     mockMvc
         .perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).content(body))
@@ -144,7 +147,33 @@ class AuthControllerTest {
   void signup_invalidCodeFormat_returns400() throws Exception {
     String body =
         objectMapper.writeValueAsString(
-            new SignupRequest("u@example.com", "닉네임", "password123", "abc", true, true, false));
+            new SignupRequest("u@example.com", "닉네임", "password123", "abc", true, true, true));
+
+    mockMvc
+        .perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  @DisplayName("회원가입_만14세동의false_400")
+  void signup_age14False_returns400() throws Exception {
+    String body =
+        objectMapper.writeValueAsString(
+            new SignupRequest("u@example.com", "닉네임", "password123", "123456", true, true, false));
+
+    mockMvc
+        .perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  @DisplayName("회원가입_만14세동의누락_400")
+  void signup_missingAge14_returns400() throws Exception {
+    String body =
+        "{\"email\":\"u@example.com\",\"nickname\":\"닉네임\",\"password\":\"password123\","
+            + "\"code\":\"123456\",\"agreedToTerms\":true,\"agreedToPrivacy\":true}";
 
     mockMvc
         .perform(post("/api/auth/signup").contentType(MediaType.APPLICATION_JSON).content(body))

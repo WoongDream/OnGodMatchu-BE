@@ -4,15 +4,16 @@ import java.util.Arrays;
 import java.util.Optional;
 
 public enum QuizCategory {
-  ENTERTAINMENT("entertainment", "연예인"),
-  MOVIE("movie", "영화"),
-  DRAMA("drama", "드라마"),
-  ANIME("anime", "애니메이션"),
   GAME("game", "게임"),
   MUSIC("music", "음악"),
-  SPORTS("sports", "스포츠"),
+  CULTURE("culture", "문화"),
+  BROADCAST("broadcast", "방송"),
   GENERAL("general", "상식"),
-  ETC("etc", "기타");
+  COMIC("comic", "만화"),
+  FOOD("food", "음식"),
+  PERSON("person", "인물"),
+  SPORTS("sports", "스포츠"),
+  MEME("meme", "병맛");
 
   private final String key;
   private final String label;

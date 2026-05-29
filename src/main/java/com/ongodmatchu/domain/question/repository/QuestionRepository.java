@@ -12,6 +12,8 @@ public interface QuestionRepository extends JpaRepository<Question, Long> {
 
   List<Question> findByQuizIdIn(Collection<Long> quizIds);
 
+  long countByQuizId(Long quizId);
+
   @Transactional
   void deleteByQuizId(Long quizId);
 

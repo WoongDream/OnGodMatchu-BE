@@ -12,4 +12,11 @@ public record AttemptResultResponse(
     int score,
     int totalQuestions,
     @Schema(description = "정답률 0~100. 문제가 0개면 null", nullable = true) Double percent,
+    @Schema(
+            description =
+                "상위 백분위 (0~100, 소수 1자리). 본인 attempt 포함 + 동률 중간 처리"
+                    + " (countGreaterThan(myScore) + countEqual(myScore)/2) / totalAttempts * 100."
+                    + " 본인이 첫 응시자(totalAttempts=1)면 null",
+            nullable = true)
+        Double topPercentile,
     List<AttemptItemResultResponse> results) {}
