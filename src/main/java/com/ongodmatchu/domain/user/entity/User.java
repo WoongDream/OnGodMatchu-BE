@@ -82,6 +82,9 @@ public class User extends BaseTimeEntity {
 
   private LocalDateTime termsAgreedAt;
 
+  @Column(nullable = false)
+  private boolean agreedToAge14 = false;
+
   @Builder
   private User(
       String email,
@@ -150,10 +153,11 @@ public class User extends BaseTimeEntity {
   }
 
   /** 가입 시점 약관 동의 기록. 재동의 플로우는 후속 작업. */
-  public void agreeToTerms(String termsVersion, String privacyVersion) {
+  public void agreeToTerms(String termsVersion, String privacyVersion, boolean agreedToAge14) {
     this.termsVersion = termsVersion;
     this.privacyVersion = privacyVersion;
     this.termsAgreedAt = LocalDateTime.now();
+    this.agreedToAge14 = agreedToAge14;
   }
 
   public void withdraw(String anonymizedEmail, String anonymizedNickname) {

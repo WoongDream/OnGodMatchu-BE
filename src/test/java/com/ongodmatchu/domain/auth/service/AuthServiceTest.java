@@ -131,7 +131,7 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "dup@example.com", "닉네임", "password123", "123456", true, true)))
+                        "dup@example.com", "닉네임", "password123", "123456", true, true, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.EMAIL_ALREADY_EXISTS);
@@ -150,7 +150,7 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "new@example.com", "닉네임", "password123", "123456", true, true)))
+                        "new@example.com", "닉네임", "password123", "123456", true, true, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
@@ -175,7 +175,7 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "new@example.com", "닉네임", "password123", "123456", true, true)))
+                        "new@example.com", "닉네임", "password123", "123456", true, true, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.VERIFICATION_CODE_EXPIRED);
@@ -194,7 +194,7 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "new@example.com", "닉네임", "password123", "999999", true, true)))
+                        "new@example.com", "닉네임", "password123", "999999", true, true, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
@@ -226,7 +226,8 @@ class AuthServiceTest {
 
     SignupResponse response =
         authService.signup(
-            new SignupRequest("new@example.com", "새사용자", "password123", "123456", true, true));
+            new SignupRequest(
+                "new@example.com", "새사용자", "password123", "123456", true, true, true));
 
     assertThat(response.accessToken()).isEqualTo("AT");
     assertThat(response.refreshToken()).isEqualTo("RT");
@@ -243,6 +244,7 @@ class AuthServiceTest {
     assertThat(saved.getTermsVersion()).isEqualTo("1.0");
     assertThat(saved.getPrivacyVersion()).isEqualTo("1.0");
     assertThat(saved.getTermsAgreedAt()).isNotNull();
+    assertThat(saved.isAgreedToAge14()).isTrue();
 
     then(emailVerificationRepository).should().deleteByEmail("new@example.com");
     then(refreshTokenRepository).should().save(any(RefreshToken.class));
@@ -255,7 +257,7 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "new@example.com", "닉네임", "password123", "123456", false, true)))
+                        "new@example.com", "닉네임", "password123", "123456", false, true, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
@@ -271,11 +273,43 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "new@example.com", "닉네임", "password123", "123456", true, false)))
+                        "new@example.com", "닉네임", "password123", "123456", true, false, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
 
+    then(userRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  @DisplayName("회원가입_만14세미동의_TERMS_AGREEMENT_REQUIRED_사전차단_저장미호출")
+  void signup_age14NotAgreed_throws() {
+    assertThatThrownBy(
+            () ->
+                authService.signup(
+                    new SignupRequest(
+                        "new@example.com", "닉네임", "password123", "123456", true, true, false)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
+
+    then(userRepository).should(never()).existsByEmail(anyString());
+    then(userRepository).should(never()).saveAndFlush(any());
+  }
+
+  @Test
+  @DisplayName("회원가입_만14세동의NULL_TERMS_AGREEMENT_REQUIRED_사전차단_저장미호출")
+  void signup_age14Null_throws() {
+    assertThatThrownBy(
+            () ->
+                authService.signup(
+                    new SignupRequest(
+                        "new@example.com", "닉네임", "password123", "123456", true, true, null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.TERMS_AGREEMENT_REQUIRED);
+
+    then(userRepository).should(never()).existsByEmail(anyString());
     then(userRepository).should(never()).saveAndFlush(any());
   }
 
@@ -292,7 +326,7 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "user@example.com", "중복닉네임", "password123", "123456", true, true)))
+                        "user@example.com", "중복닉네임", "password123", "123456", true, true, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
@@ -320,7 +354,7 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "race@example.com", "레이스닉네임", "password123", "123456", true, true)))
+                        "race@example.com", "레이스닉네임", "password123", "123456", true, true, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.NICKNAME_ALREADY_EXISTS);
@@ -341,7 +375,7 @@ class AuthServiceTest {
             () ->
                 authService.signup(
                     new SignupRequest(
-                        "user@example.com", "x", "password123", "123456", true, true)))
+                        "user@example.com", "x", "password123", "123456", true, true, true)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);

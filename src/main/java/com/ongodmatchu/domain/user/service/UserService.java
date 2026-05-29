@@ -71,7 +71,7 @@ public class UserService {
   @Transactional
   public UserResponse agreeToCurrentTerms(Long userId) {
     User user = findUserById(userId);
-    user.agreeToTerms(TermsPolicy.CURRENT_TERMS_VERSION, TermsPolicy.CURRENT_PRIVACY_VERSION);
+    user.agreeToTerms(TermsPolicy.CURRENT_TERMS_VERSION, TermsPolicy.CURRENT_PRIVACY_VERSION, true);
     return toResponse(user);
   }
 

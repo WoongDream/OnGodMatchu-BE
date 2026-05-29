@@ -11,8 +11,9 @@ public final class TermsPolicy {
 
   private TermsPolicy() {}
 
-  public static void enforceRequired(boolean agreedToTerms, boolean agreedToPrivacy) {
-    if (!agreedToTerms || !agreedToPrivacy) {
+  public static void enforceRequired(
+      boolean agreedToTerms, boolean agreedToPrivacy, boolean agreedToAge14) {
+    if (!agreedToTerms || !agreedToPrivacy || !agreedToAge14) {
       throw new BusinessException(ErrorCode.TERMS_AGREEMENT_REQUIRED);
     }
   }
