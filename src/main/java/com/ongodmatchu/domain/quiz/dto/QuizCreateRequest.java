@@ -1,5 +1,6 @@
 package com.ongodmatchu.domain.quiz.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -11,5 +12,7 @@ public record QuizCreateRequest(
     String description,
     @NotBlank(message = "카테고리를 입력해주세요.") String category,
     String thumbnailKey,
+    String originalThumbnailKey,
+    JsonNode thumbnailTransform,
     QuizVisibility visibility,
     @NotEmpty(message = "문제를 1개 이상 입력해주세요.") @Valid List<QuestionCreateRequest> questions) {}

@@ -11,10 +11,13 @@ import static org.mockito.BDDMockito.willDoNothing;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.never;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
+import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
@@ -108,6 +111,16 @@ class UserServiceTest {
     return new ViewUrlResponse(VIEW_URL, key, 3600L, Instant.now().plusSeconds(3600));
   }
 
+  private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+
+  private JsonNode transform(String json) {
+    try {
+      return OBJECT_MAPPER.readTree(json);
+    } catch (Exception e) {
+      throw new RuntimeException(e);
+    }
+  }
+
   // ============ getMe ============
 
   @Test
@@ -138,6 +151,26 @@ class UserServiceTest {
   }
 
   @Test
+  @DisplayName("getMe_소유자_원본키있음_originalProfileImageUrl과transform노출")
+  void getMe_owner_exposesOriginalUrlAndTransform() {
+    User user = buildLocalUser(1L, "홍길동");
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    String originalKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/original.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", key);
+    ReflectionTestUtils.setField(user, "originalProfileImageKey", originalKey);
+    ReflectionTestUtils.setField(user, "profileImageTransform", "{\"x\":1}");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(anyString()))
+        .willAnswer(inv -> viewUrlResponse(inv.getArgument(0)));
+
+    UserResponse result = userService.getMe(1L);
+
+    assertThat(result.originalProfileImageUrl()).isEqualTo(VIEW_URL);
+    assertThat(result.profileImageTransform()).isEqualTo("{\"x\":1}");
+    then(s3Service).should().generateViewUrl(originalKey);
+  }
+
+  @Test
   @DisplayName("getMe_사용자미존재_USER_NOT_FOUND예외")
   void getMe_userNotFound_throwsException() {
     given(userRepository.findById(99L)).willReturn(Optional.empty());
@@ -161,6 +194,54 @@ class UserServiceTest {
     Object result = userService.getProfile(publicId, 99L);
 
     assertThat(result).isInstanceOf(UserResponse.class);
+  }
+
+  @Test
+  @DisplayName("getProfile_소유자_원본키있음_originalProfileImageUrl과transform노출")
+  void getProfile_owner_exposesOriginalUrlAndTransform() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "본인");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    String originalKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/original.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", key);
+    ReflectionTestUtils.setField(user, "originalProfileImageKey", originalKey);
+    ReflectionTestUtils.setField(user, "profileImageTransform", "{\"scale\":2}");
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(anyString()))
+        .willAnswer(inv -> viewUrlResponse(inv.getArgument(0)));
+
+    Object result = userService.getProfile(publicId, 1L);
+
+    assertThat(result).isInstanceOf(UserResponse.class);
+    UserResponse response = (UserResponse) result;
+    assertThat(response.originalProfileImageUrl()).isEqualTo(VIEW_URL);
+    assertThat(response.profileImageTransform()).isEqualTo("{\"scale\":2}");
+    then(s3Service).should().generateViewUrl(originalKey);
+  }
+
+  @Test
+  @DisplayName("getProfile_공개프로필_외부뷰어_원본과transform_미노출_null")
+  void getProfile_publicProfile_externalViewer_hidesOriginalAndTransform() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.updateProfilePublic(true);
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    String originalKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/original.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", key);
+    ReflectionTestUtils.setField(user, "originalProfileImageKey", originalKey);
+    ReflectionTestUtils.setField(user, "profileImageTransform", "{\"x\":1}");
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(key)).willReturn(viewUrlResponse(key));
+
+    Object result = userService.getProfile(publicId, 99L);
+
+    assertThat(result).isInstanceOf(UserResponse.class);
+    UserResponse response = (UserResponse) result;
+    assertThat(response.originalProfileImageUrl()).isNull();
+    assertThat(response.profileImageTransform()).isNull();
+    then(s3Service).should(never()).generateViewUrl(originalKey);
   }
 
   @Test
@@ -469,7 +550,7 @@ class UserServiceTest {
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
     given(s3Service.generateViewUrl(key)).willReturn(viewUrlResponse(key));
 
-    userService.applyProfileImage(1L, key);
+    userService.applyProfileImage(1L, new ProfileImageUpdateRequest(key, null, null));
 
     assertThat(user.getProfileImageKey()).isEqualTo(key);
     then(s3Service).should().completeUpload(1L, key);
@@ -485,7 +566,7 @@ class UserServiceTest {
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
     given(s3Service.generateViewUrl(newKey)).willReturn(viewUrlResponse(newKey));
 
-    userService.applyProfileImage(1L, newKey);
+    userService.applyProfileImage(1L, new ProfileImageUpdateRequest(newKey, null, null));
 
     then(s3Service).should().deleteQuietly(oldKey);
   }
@@ -498,7 +579,7 @@ class UserServiceTest {
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
     given(s3Service.generateViewUrl(key)).willReturn(viewUrlResponse(key));
 
-    userService.applyProfileImage(1L, key);
+    userService.applyProfileImage(1L, new ProfileImageUpdateRequest(key, null, null));
 
     then(s3Service).should(never()).deleteQuietly(anyString());
   }
@@ -512,7 +593,7 @@ class UserServiceTest {
     given(userRepository.findById(1L)).willReturn(Optional.of(user));
     given(s3Service.generateViewUrl(key)).willReturn(viewUrlResponse(key));
 
-    userService.applyProfileImage(1L, key);
+    userService.applyProfileImage(1L, new ProfileImageUpdateRequest(key, null, null));
 
     then(s3Service).should(never()).deleteQuietly(anyString());
   }
@@ -520,7 +601,10 @@ class UserServiceTest {
   @Test
   @DisplayName("applyProfileImage_잘못된prefix_INVALID_UPLOAD_KEY예외")
   void applyProfileImage_invalidKeyPrefix_throwsException() {
-    assertThatThrownBy(() -> userService.applyProfileImage(1L, "quiz-images/uuid/photo.jpg"))
+    assertThatThrownBy(
+            () ->
+                userService.applyProfileImage(
+                    1L, new ProfileImageUpdateRequest("quiz-images/uuid/photo.jpg", null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_UPLOAD_KEY);
@@ -529,10 +613,72 @@ class UserServiceTest {
   @Test
   @DisplayName("applyProfileImage_null키_INVALID_UPLOAD_KEY예외")
   void applyProfileImage_nullKey_throwsException() {
-    assertThatThrownBy(() -> userService.applyProfileImage(1L, null))
+    assertThatThrownBy(
+            () ->
+                userService.applyProfileImage(1L, new ProfileImageUpdateRequest(null, null, null)))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.INVALID_UPLOAD_KEY);
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_원본보존_크롭_completeUpload_key와originalKey둘다호출_transform반영")
+  void applyProfileImage_withOriginalAndTransform_completesBothAndStoresTransform() {
+    User user = buildLocalUser(1L, "유저");
+    String prevKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/prev.jpg";
+    String prevOriginal = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/prev-original.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", prevKey);
+    ReflectionTestUtils.setField(user, "originalProfileImageKey", prevOriginal);
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    String originalKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/original.jpg";
+    JsonNode node = transform("{\"x\":1,\"y\":2,\"scale\":1.5}");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(anyString()))
+        .willAnswer(inv -> viewUrlResponse(inv.getArgument(0)));
+
+    userService.applyProfileImage(1L, new ProfileImageUpdateRequest(key, originalKey, node));
+
+    assertThat(user.getProfileImageKey()).isEqualTo(key);
+    assertThat(user.getOriginalProfileImageKey()).isEqualTo(originalKey);
+    assertThat(user.getProfileImageTransform()).isEqualTo(node.toString());
+    then(s3Service).should().completeUpload(1L, key);
+    then(s3Service).should().completeUpload(1L, originalKey);
+    then(s3Service).should().deleteQuietly(prevKey);
+    then(s3Service).should().deleteQuietly(prevOriginal);
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_크롭안함_originalKey와key동일_completeUpload한번만")
+  void applyProfileImage_originalKeyEqualsKey_completesOnce() {
+    User user = buildLocalUser(1L, "유저");
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/photo.jpg";
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(s3Service.generateViewUrl(anyString()))
+        .willAnswer(inv -> viewUrlResponse(inv.getArgument(0)));
+
+    userService.applyProfileImage(1L, new ProfileImageUpdateRequest(key, key, null));
+
+    then(s3Service).should().completeUpload(1L, key);
+    then(s3Service).should(never()).completeUpload(eq(1L), eq(key + "dup"));
+    org.mockito.Mockito.verify(s3Service, org.mockito.Mockito.times(1)).completeUpload(1L, key);
+  }
+
+  @Test
+  @DisplayName("applyProfileImage_transform_2KB초과_INVALID_INPUT예외")
+  void applyProfileImage_transformTooLarge_throwsInvalidInput() {
+    User user = buildLocalUser(1L, "유저");
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/photo.jpg";
+    StringBuilder big = new StringBuilder("{\"v\":\"");
+    big.append("a".repeat(3000));
+    big.append("\"}");
+    JsonNode node = transform(big.toString());
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    assertThatThrownBy(
+            () -> userService.applyProfileImage(1L, new ProfileImageUpdateRequest(key, null, node)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_INPUT);
   }
 
   // ============ deleteProfileImage ============
@@ -548,6 +694,26 @@ class UserServiceTest {
 
     assertThat(user.getProfileImageKey()).isNull();
     then(s3Service).should().deleteQuietly("profile-images/uuid/photo.jpg");
+  }
+
+  @Test
+  @DisplayName("deleteProfileImage_원본보존상태_셋다null_key와original둘다deleteQuietly")
+  void deleteProfileImage_withOriginal_clearsAllAndDeletesBoth() {
+    User user = buildLocalUser(1L, "유저");
+    String key = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    String original = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/original.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", key);
+    ReflectionTestUtils.setField(user, "originalProfileImageKey", original);
+    ReflectionTestUtils.setField(user, "profileImageTransform", "{\"x\":1}");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+
+    userService.deleteProfileImage(1L);
+
+    assertThat(user.getProfileImageKey()).isNull();
+    assertThat(user.getOriginalProfileImageKey()).isNull();
+    assertThat(user.getProfileImageTransform()).isNull();
+    then(s3Service).should().deleteQuietly(key);
+    then(s3Service).should().deleteQuietly(original);
   }
 
   @Test
@@ -611,6 +777,28 @@ class UserServiceTest {
     userService.regenerateDefaultProfileImage(1L);
 
     then(s3Service).should().deleteQuietly(oldKey);
+  }
+
+  @Test
+  @DisplayName("regenerateDefaultProfileImage_원본보존상태_원본_transform_null_이전original도deleteQuietly")
+  void regenerateDefaultProfileImage_clearsOriginalAndDeletesPreviousOriginal() {
+    User user = buildLocalUser(1L, "유저");
+    String prevKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/prev.jpg";
+    String prevOriginal = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/prev-original.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", prevKey);
+    ReflectionTestUtils.setField(user, "originalProfileImageKey", prevOriginal);
+    ReflectionTestUtils.setField(user, "profileImageTransform", "{\"x\":1}");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(profileImageGenerator.generateSvg("유저")).willReturn("<svg/>".getBytes());
+    given(s3Service.generateViewUrl(anyString()))
+        .willAnswer(inv -> viewUrlResponse(inv.getArgument(0)));
+
+    userService.regenerateDefaultProfileImage(1L);
+
+    assertThat(user.getOriginalProfileImageKey()).isNull();
+    assertThat(user.getProfileImageTransform()).isNull();
+    then(s3Service).should().deleteQuietly(prevKey);
+    then(s3Service).should().deleteQuietly(prevOriginal);
   }
 
   @Test

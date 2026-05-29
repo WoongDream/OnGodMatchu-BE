@@ -150,8 +150,7 @@ public class UserController {
   public ResponseEntity<ApiResponse<UserResponse>> applyProfileImage(
       @AuthenticationPrincipal CustomUserDetails userDetails,
       @Valid @RequestBody ProfileImageUpdateRequest request) {
-    UserResponse response =
-        userService.applyProfileImage(userDetails.getUser().getId(), request.key());
+    UserResponse response = userService.applyProfileImage(userDetails.getUser().getId(), request);
     return ResponseEntity.ok(ApiResponse.ok(response));
   }
 

@@ -17,11 +17,16 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
+import com.ongodmatchu.domain.question.entity.Question;
+import com.ongodmatchu.domain.quiz.dto.QuestionResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizCreateRequest;
+import com.ongodmatchu.domain.quiz.dto.QuizDetailResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizShareResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizUpdateRequest;
 import com.ongodmatchu.domain.quiz.dto.ScoreCountResponse;
 import com.ongodmatchu.domain.quiz.dto.ScoreDistributionResponse;
+import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
 import com.ongodmatchu.domain.quiz.service.QuizService;
@@ -32,6 +37,7 @@ import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
 import com.ongodmatchu.global.web.AnonIdCookieFilter;
+import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -253,7 +259,8 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_정상요청_200_QuizResponse반환")
   void updateQuiz_validRequest_returns200WithQuizResponse() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", "새 설명", "music", null, null, null);
+    QuizUpdateRequest request =
+        new QuizUpdateRequest("새 제목", "새 설명", "music", null, null, null, null, null);
     QuizResponse updated =
         new QuizResponse(
             1L,
@@ -289,7 +296,8 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_권한없음_403반환")
   void updateQuiz_forbidden_returns403() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null, null, null);
+    QuizUpdateRequest request =
+        new QuizUpdateRequest("새 제목", null, null, null, null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class)))
         .willThrow(new BusinessException(ErrorCode.QUIZ_FORBIDDEN));
 
@@ -306,7 +314,8 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_퀴즈미존재_404반환")
   void updateQuiz_notFound_returns404() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest("새 제목", null, null, null, null, null);
+    QuizUpdateRequest request =
+        new QuizUpdateRequest("새 제목", null, null, null, null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(99L), any(QuizUpdateRequest.class)))
         .willThrow(new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
 
@@ -345,7 +354,8 @@ class QuizControllerTest {
   @Test
   @DisplayName("updateQuiz_모든필드null_정상_200반환")
   void updateQuiz_allNullFields_returns200() throws Exception {
-    QuizUpdateRequest request = new QuizUpdateRequest(null, null, null, null, null, null);
+    QuizUpdateRequest request =
+        new QuizUpdateRequest(null, null, null, null, null, null, null, null);
     given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class)))
         .willReturn(sampleQuizResponse);
 
@@ -454,5 +464,211 @@ class QuizControllerTest {
         .andExpect(jsonPath("$.error.code").value("QUIZ_NOT_FOUND"));
 
     then(quizShareService).should().recordShare(eq(1L), isNull(), eq("anon-uuid"));
+  }
+
+  // ============ 공용 이미지 편집 (원본 + transform) ============
+
+  @Test
+  @DisplayName("createQuiz_원본키와_transform_포함_요청_서비스로_캡처_전달")
+  void createQuiz_withOriginalAndTransform_capturedByService() throws Exception {
+    given(quizService.createQuiz(eq(1L), any(QuizCreateRequest.class)))
+        .willReturn(sampleQuizResponse);
+
+    String body =
+        """
+        {
+          "title": "퀴즈 제목",
+          "description": "설명",
+          "category": "game",
+          "thumbnailKey": "thumb-cropped.png",
+          "originalThumbnailKey": "thumb-original.png",
+          "thumbnailTransform": {"v": 1, "rotate": 90, "flip": true},
+          "visibility": "PUBLIC",
+          "questions": [
+            {
+              "imageKey": "q1-cropped.png",
+              "originalImageKey": "q1-original.png",
+              "imageTransform": {"v": 1, "rotate": 45},
+              "answerImageKey": "a1-cropped.png",
+              "originalAnswerImageKey": "a1-original.png",
+              "answerImageTransform": {"v": 1, "rotate": 180},
+              "questionText": "문제1",
+              "answer": "정답1"
+            }
+          ]
+        }
+        """;
+
+    mockMvc
+        .perform(post("/api/quizzes").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    ArgumentCaptor<QuizCreateRequest> captor = ArgumentCaptor.forClass(QuizCreateRequest.class);
+    then(quizService).should().createQuiz(eq(1L), captor.capture());
+    QuizCreateRequest captured = captor.getValue();
+    assertThat(captured.originalThumbnailKey()).isEqualTo("thumb-original.png");
+    assertThat(captured.thumbnailTransform()).isNotNull();
+    assertThat(captured.thumbnailTransform().get("rotate").asInt()).isEqualTo(90);
+    assertThat(captured.thumbnailTransform().get("flip").asBoolean()).isTrue();
+    assertThat(captured.questions()).hasSize(1);
+    var q = captured.questions().get(0);
+    assertThat(q.originalImageKey()).isEqualTo("q1-original.png");
+    assertThat(q.imageTransform().get("rotate").asInt()).isEqualTo(45);
+    assertThat(q.originalAnswerImageKey()).isEqualTo("a1-original.png");
+    assertThat(q.answerImageTransform().get("rotate").asInt()).isEqualTo(180);
+  }
+
+  @Test
+  @DisplayName("updateQuiz_원본키와_transform_포함_요청_서비스로_캡처_전달")
+  void updateQuiz_withOriginalAndTransform_capturedByService() throws Exception {
+    given(quizService.updateQuiz(eq(1L), eq(1L), any(QuizUpdateRequest.class)))
+        .willReturn(sampleQuizResponse);
+
+    String body =
+        """
+        {
+          "title": "수정 제목",
+          "thumbnailKey": "thumb-cropped-v2.png",
+          "originalThumbnailKey": "thumb-original-v2.png",
+          "thumbnailTransform": {"v": 1, "rotate": 270},
+          "questions": [
+            {
+              "id": 10,
+              "imageKey": "q1-cropped-v2.png",
+              "originalImageKey": "q1-original-v2.png",
+              "imageTransform": {"v": 1, "rotate": 90},
+              "answerImageKey": "a1-cropped-v2.png",
+              "originalAnswerImageKey": "a1-original-v2.png",
+              "answerImageTransform": {"v": 1, "rotate": 30},
+              "questionText": "문제1",
+              "answer": "정답1"
+            }
+          ]
+        }
+        """;
+
+    mockMvc
+        .perform(patch("/api/quizzes/1").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    ArgumentCaptor<QuizUpdateRequest> captor = ArgumentCaptor.forClass(QuizUpdateRequest.class);
+    then(quizService).should().updateQuiz(eq(1L), eq(1L), captor.capture());
+    QuizUpdateRequest captured = captor.getValue();
+    assertThat(captured.originalThumbnailKey()).isEqualTo("thumb-original-v2.png");
+    assertThat(captured.thumbnailTransform()).isNotNull();
+    assertThat(captured.thumbnailTransform().get("rotate").asInt()).isEqualTo(270);
+    assertThat(captured.questions()).hasSize(1);
+    var q = captured.questions().get(0);
+    assertThat(q.id()).isEqualTo(10L);
+    assertThat(q.originalImageKey()).isEqualTo("q1-original-v2.png");
+    assertThat(q.imageTransform().get("rotate").asInt()).isEqualTo(90);
+    assertThat(q.originalAnswerImageKey()).isEqualTo("a1-original-v2.png");
+    assertThat(q.answerImageTransform().get("rotate").asInt()).isEqualTo(30);
+  }
+
+  @Test
+  @DisplayName("getQuizDetail_원본URL과_transform_응답에_중첩객체로_노출")
+  void getQuizDetail_exposesOriginalUrlsAndTransform() throws Exception {
+    given(quizService.getQuizDetail(eq(1L), eq(1L)))
+        .willReturn(
+            buildDetailResponse(
+                "{\"v\":1,\"rotate\":90}",
+                "https://cdn/thumb-original.png",
+                "{\"v\":1,\"rotate\":45,\"flip\":true}",
+                "https://cdn/q1-original.png",
+                "{\"v\":1,\"rotate\":180}",
+                "https://cdn/a1-original.png"));
+
+    mockMvc
+        .perform(get("/api/quizzes/1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.originalThumbnailUrl").value("https://cdn/thumb-original.png"))
+        .andExpect(jsonPath("$.data.thumbnailTransform.rotate").value(90))
+        .andExpect(
+            jsonPath("$.data.questions[0].originalImageUrl").value("https://cdn/q1-original.png"))
+        .andExpect(jsonPath("$.data.questions[0].imageTransform.rotate").value(45))
+        .andExpect(jsonPath("$.data.questions[0].imageTransform.flip").value(true))
+        .andExpect(
+            jsonPath("$.data.questions[0].originalAnswerImageUrl")
+                .value("https://cdn/a1-original.png"))
+        .andExpect(jsonPath("$.data.questions[0].answerImageTransform.rotate").value(180));
+  }
+
+  @Test
+  @DisplayName("getQuizDetail_transform과_원본_null이면_응답필드_null")
+  void getQuizDetail_nullTransformAndOriginal_serializeNull() throws Exception {
+    given(quizService.getQuizDetail(eq(1L), eq(1L)))
+        .willReturn(buildDetailResponse(null, null, null, null, null, null));
+
+    mockMvc
+        .perform(get("/api/quizzes/1"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.data.originalThumbnailUrl").doesNotExist())
+        .andExpect(jsonPath("$.data.thumbnailTransform").doesNotExist())
+        .andExpect(jsonPath("$.data.questions[0].originalImageUrl").doesNotExist())
+        .andExpect(jsonPath("$.data.questions[0].imageTransform").doesNotExist())
+        .andExpect(jsonPath("$.data.questions[0].originalAnswerImageUrl").doesNotExist())
+        .andExpect(jsonPath("$.data.questions[0].answerImageTransform").doesNotExist());
+  }
+
+  private QuizDetailResponse buildDetailResponse(
+      String thumbnailTransform,
+      String originalThumbnailUrl,
+      String imageTransform,
+      String originalImageUrl,
+      String answerImageTransform,
+      String originalAnswerImageUrl) {
+    Quiz quiz =
+        Quiz.builder()
+            .user(testUser)
+            .title("퀴즈 제목")
+            .description("설명")
+            .category("game")
+            .thumbnailKey("thumb-cropped.png")
+            .originalThumbnailKey("thumb-original.png")
+            .thumbnailTransform(thumbnailTransform)
+            .visibility(QuizVisibility.PUBLIC)
+            .build();
+    ReflectionTestUtils.setField(quiz, "id", 1L);
+    ReflectionTestUtils.setField(
+        quiz, "publicId", UUID.fromString("00000000-0000-0000-0000-000000000002"));
+    ReflectionTestUtils.setField(quiz, "createdAt", LocalDateTime.of(2024, 1, 1, 0, 0));
+
+    Question question =
+        Question.builder()
+            .quiz(quiz)
+            .orderNum(0)
+            .imageKey("q1-cropped.png")
+            .originalImageKey("q1-original.png")
+            .imageTransform(imageTransform)
+            .answerImageKey("a1-cropped.png")
+            .originalAnswerImageKey("a1-original.png")
+            .answerImageTransform(answerImageTransform)
+            .questionText("문제1")
+            .answer("정답1")
+            .build();
+    ReflectionTestUtils.setField(question, "id", 10L);
+
+    QuestionResponse questionResponse =
+        QuestionResponse.from(
+            question,
+            "https://cdn/q1-cropped.png",
+            originalImageUrl,
+            "https://cdn/a1-cropped.png",
+            originalAnswerImageUrl,
+            true);
+
+    return QuizDetailResponse.of(
+        quiz,
+        "https://cdn/thumb-cropped.png",
+        originalThumbnailUrl,
+        true,
+        true,
+        80.0,
+        "https://cdn/author.png",
+        List.of(questionResponse));
   }
 }

@@ -1,5 +1,6 @@
 package com.ongodmatchu.domain.quiz.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
@@ -14,5 +15,7 @@ public record QuizUpdateRequest(
     String description,
     String category,
     String thumbnailKey,
+    String originalThumbnailKey,
+    JsonNode thumbnailTransform,
     QuizVisibility visibility,
     @Valid @Size(min = 1, message = "문제는 1개 이상이어야 합니다.") List<QuestionUpdateRequest> questions) {}
