@@ -702,6 +702,36 @@ class QuizServiceTest {
     assertThat(stats.avgCorrectRate()).isNull();
   }
 
+  @Test
+  @DisplayName("getProfileStats_내풀이기록_solvedCount+avgSolveRate_정상매핑")
+  void getProfileStats_solvedCountAndAvgSolveRate_mapped() {
+    given(quizRepository.aggregateByUserId(1L)).willReturn(stubAggregateRow(2, 20, 3, 1, 0));
+    given(quizAttemptRepository.countWeeklyPlaysOfQuizzesOwnedBy(eq(1L), any())).willReturn(0L);
+    given(quizAttemptRepository.perQuizCorrectRatesOwnedBy(1L)).willReturn(List.of());
+    given(quizAttemptRepository.countByUserId(1L)).willReturn(348L);
+    given(quizAttemptRepository.avgSolveRateOf(1L)).willReturn(64.0);
+
+    com.ongodmatchu.domain.user.dto.ProfileStatsResponse stats = quizService.getProfileStats(1L);
+
+    assertThat(stats.solvedCount()).isEqualTo(348L);
+    assertThat(stats.avgSolveRate()).isEqualTo(64.0);
+  }
+
+  @Test
+  @DisplayName("getProfileStats_내풀이_시도0_solvedCount0+avgSolveRate_null")
+  void getProfileStats_noAttempts_solvedCountZeroAvgSolveRateNull() {
+    given(quizRepository.aggregateByUserId(1L)).willReturn(stubAggregateRow(2, 0, 0, 0, 0));
+    given(quizAttemptRepository.countWeeklyPlaysOfQuizzesOwnedBy(eq(1L), any())).willReturn(0L);
+    given(quizAttemptRepository.perQuizCorrectRatesOwnedBy(1L)).willReturn(List.of());
+    given(quizAttemptRepository.countByUserId(1L)).willReturn(0L);
+    given(quizAttemptRepository.avgSolveRateOf(1L)).willReturn(null);
+
+    com.ongodmatchu.domain.user.dto.ProfileStatsResponse stats = quizService.getProfileStats(1L);
+
+    assertThat(stats.solvedCount()).isZero();
+    assertThat(stats.avgSolveRate()).isNull();
+  }
+
   // ============ getMyQuizList ============
 
   @Test

@@ -59,6 +59,18 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> 
           + "FROM QuizAttempt a WHERE a.quiz.user.id = :userId GROUP BY a.quiz.id")
   List<Double> perQuizCorrectRatesOwnedBy(@Param("userId") Long userId);
 
+  /** 본인이 푼 횟수 — user_id 로 필터하므로 비로그인(user=null) attempt 는 자연 제외. */
+  long countByUserId(Long userId);
+
+  /**
+   * 본인이 푼 평균 정답률 (0~100). 산출: 본인 attempts 의 SUM(score)*100/SUM(totalQuestions). 시도 0이면 SUM 이 null
+   * 이라 null 반환.
+   */
+  @Query(
+      "SELECT (SUM(a.score) * 100.0 / SUM(a.totalQuestions)) "
+          + "FROM QuizAttempt a WHERE a.user.id = :userId")
+  Double avgSolveRateOf(@Param("userId") Long userId);
+
   /** 주어진 퀴즈 ID 들의 정답률(0~100). 시도 없는 퀴즈는 결과에 누락. */
   @Query(
       "SELECT a.quiz.id AS quizId, "

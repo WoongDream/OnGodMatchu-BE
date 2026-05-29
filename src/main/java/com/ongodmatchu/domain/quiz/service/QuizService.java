@@ -364,6 +364,9 @@ public class QuizService {
             ? null
             : perQuizRates.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
 
+    long solvedCount = quizAttemptRepository.countByUserId(userId);
+    Double avgSolveRate = quizAttemptRepository.avgSolveRateOf(userId);
+
     return new ProfileStatsResponse(
         row.getQuizCount(),
         row.getPlays(),
@@ -371,7 +374,9 @@ public class QuizService {
         row.getComments(),
         row.getShares(),
         weekly,
-        avgCorrectRate);
+        avgCorrectRate,
+        solvedCount,
+        avgSolveRate);
   }
 
   private Pageable applyPageDefaults(Pageable pageable, QuizSort sort) {
