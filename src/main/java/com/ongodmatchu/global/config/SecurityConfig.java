@@ -64,7 +64,8 @@ public class SecurityConfig {
                         "/api/users/me",
                         "/api/users/me/quizzes",
                         "/api/users/me/profile/stats",
-                        "/api/users/me/attempts")
+                        "/api/users/me/attempts",
+                        "/api/users/me/stars")
                     .authenticated()
                     .requestMatchers(
                         HttpMethod.GET,

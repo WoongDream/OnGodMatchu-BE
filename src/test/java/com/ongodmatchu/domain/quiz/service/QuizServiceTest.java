@@ -2098,4 +2098,128 @@ class QuizServiceTest {
     assertThat(affected).isEqualTo(3);
     then(quizRepository).should().transferOwnership(1L, 999L);
   }
+
+  // ============ getMyStarredQuizzes ============
+
+  /** QuizCorrectRateRow projection stub 헬퍼. */
+  private static QuizAttemptRepository.QuizCorrectRateRow rateRow(Long quizId, Double rate) {
+    return new QuizAttemptRepository.QuizCorrectRateRow() {
+      @Override
+      public Long getQuizId() {
+        return quizId;
+      }
+
+      @Override
+      public Double getRate() {
+        return rate;
+      }
+    };
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_필드매핑+isStarred전부true")
+  void getMyStarredQuizzes_mapsFieldsAndIsStarredAlwaysTrue() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizStarRepository.findStarredQuizzesByUserId(eq(1L), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    Page<QuizResponse> result = quizService.getMyStarredQuizzes(1L, null, PageRequest.of(0, 12));
+
+    assertThat(result.getContent()).hasSize(1);
+    QuizResponse item = result.getContent().get(0);
+    assertThat(item.title()).isEqualTo("퀴즈 제목");
+    assertThat(item.category()).isEqualTo("game");
+    assertThat(item.authorNickname()).isEqualTo("작성자");
+    assertThat(item.isStarred()).isTrue();
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_correctRate_있으면_매핑")
+  void getMyStarredQuizzes_correctRatePresent_mapped() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizStarRepository.findStarredQuizzesByUserId(eq(1L), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+    given(quizAttemptRepository.correctRateByQuizIds(List.of(1L)))
+        .willReturn(List.of(rateRow(1L, 75.0)));
+
+    Page<QuizResponse> result = quizService.getMyStarredQuizzes(1L, null, PageRequest.of(0, 12));
+
+    assertThat(result.getContent().get(0).correctRate()).isEqualTo(75.0);
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_풀이기록없는퀴즈_correctRate_null")
+  void getMyStarredQuizzes_noAttempt_correctRateIsNull() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizStarRepository.findStarredQuizzesByUserId(eq(1L), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+    given(quizAttemptRepository.correctRateByQuizIds(List.of(1L))).willReturn(List.of());
+
+    Page<QuizResponse> result = quizService.getMyStarredQuizzes(1L, null, PageRequest.of(0, 12));
+
+    assertThat(result.getContent().get(0).isStarred()).isTrue();
+    assertThat(result.getContent().get(0).correctRate()).isNull();
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_공백title_null로정규화되어_repository에전달")
+  void getMyStarredQuizzes_blankTitle_normalizedToNull() {
+    given(quizStarRepository.findStarredQuizzesByUserId(eq(1L), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    quizService.getMyStarredQuizzes(1L, "   ", PageRequest.of(0, 12));
+
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    then(quizStarRepository)
+        .should()
+        .findStarredQuizzesByUserId(eq(1L), titleCaptor.capture(), any(Pageable.class));
+    assertThat(titleCaptor.getValue()).isNull();
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_title_trim후_그대로_repository에전달")
+  void getMyStarredQuizzes_title_trimmedPassthrough() {
+    given(quizStarRepository.findStarredQuizzesByUserId(eq(1L), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    quizService.getMyStarredQuizzes(1L, "  한국사  ", PageRequest.of(0, 12));
+
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    then(quizStarRepository)
+        .should()
+        .findStarredQuizzesByUserId(eq(1L), titleCaptor.capture(), any(Pageable.class));
+    assertThat(titleCaptor.getValue()).isEqualTo("한국사");
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_size50초과요청_50으로cap_sort없음")
+  void getMyStarredQuizzes_pageSize_cappedAt50_noSort() {
+    given(quizStarRepository.findStarredQuizzesByUserId(eq(1L), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    quizService.getMyStarredQuizzes(1L, null, PageRequest.of(0, 200));
+
+    ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+    then(quizStarRepository)
+        .should()
+        .findStarredQuizzesByUserId(eq(1L), any(), pageableCaptor.capture());
+    assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(50);
+    assertThat(pageableCaptor.getValue().getSort().isSorted()).isFalse();
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_스타없음_빈페이지_correctRate미조회")
+  void getMyStarredQuizzes_emptyPage() {
+    given(quizStarRepository.findStarredQuizzesByUserId(eq(1L), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    Page<QuizResponse> result = quizService.getMyStarredQuizzes(1L, null, PageRequest.of(0, 12));
+
+    assertThat(result.getContent()).isEmpty();
+    assertThat(result.getTotalElements()).isZero();
+    then(quizAttemptRepository).should(never()).correctRateByQuizIds(any());
+  }
 }

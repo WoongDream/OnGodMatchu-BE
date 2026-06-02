@@ -15,6 +15,43 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> 
 
   Page<QuizAttempt> findByUserIdOrderByCompletedAtDesc(Long userId, Pageable pageable);
 
+  /**
+   * 내 풀이 기록을 퀴즈 단위로 그룹화 — quiz 당 1행 (quizId + 누적 풀이 횟수), 최신 풀이 시각 DESC 정렬. title 이 주어지면 퀴즈 제목 부분일치
+   * 필터(대소문자 무시). 정렬은 쿼리에 박혀 있으므로 호출자는 정렬 없는 Pageable 을 넘긴다.
+   */
+  @Query(
+      value =
+          "SELECT a.quiz.id AS quizId, COUNT(a) AS attemptCount "
+              + "FROM QuizAttempt a "
+              + "WHERE a.user.id = :userId "
+              + "AND (CAST(:title AS string) IS NULL OR LOWER(a.quiz.title) LIKE LOWER(CONCAT('%', CAST(:title AS string), '%'))) "
+              + "GROUP BY a.quiz.id "
+              + "ORDER BY MAX(a.completedAt) DESC",
+      countQuery =
+          "SELECT COUNT(DISTINCT a.quiz.id) FROM QuizAttempt a "
+              + "WHERE a.user.id = :userId "
+              + "AND (CAST(:title AS string) IS NULL OR LOWER(a.quiz.title) LIKE LOWER(CONCAT('%', CAST(:title AS string), '%')))")
+  Page<AttemptGroupRow> findAttemptGroupsByUserId(
+      @Param("userId") Long userId, @Param("title") String title, Pageable pageable);
+
+  /**
+   * 주어진 퀴즈 ID 들에 대해 해당 유저의 최신 attempt 1건씩 (quiz fetch join). 최신 기준은 MAX(id) — IDENTITY 단조 증가라
+   * completedAt 동률에도 안전.
+   */
+  @Query(
+      "SELECT a FROM QuizAttempt a JOIN FETCH a.quiz "
+          + "WHERE a.user.id = :userId AND a.quiz.id IN :quizIds "
+          + "AND a.id = (SELECT MAX(b.id) FROM QuizAttempt b "
+          + "WHERE b.user.id = :userId AND b.quiz.id = a.quiz.id)")
+  List<QuizAttempt> findLatestAttemptsPerQuiz(
+      @Param("userId") Long userId, @Param("quizIds") Collection<Long> quizIds);
+
+  interface AttemptGroupRow {
+    Long getQuizId();
+
+    long getAttemptCount();
+  }
+
   long countByQuizId(Long quizId);
 
   @Transactional

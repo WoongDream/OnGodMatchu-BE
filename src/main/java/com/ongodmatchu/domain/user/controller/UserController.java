@@ -3,6 +3,7 @@ package com.ongodmatchu.domain.user.controller;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.quiz.dto.AttemptListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizSort;
 import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
@@ -204,6 +205,21 @@ public class UserController {
   }
 
   @Operation(
+      summary = "내가 스타 준 퀴즈 목록",
+      description =
+          "스타 누른 시각 DESC. 메인 목록과 동일한 QuizResponse(카운터 + isStarred=true + thumbnail presign). "
+              + "title 로 퀴즈 제목 부분일치 검색(옵션). 본인 PRIVATE 포함. size 최대 50. 내 전용(인증 필수)")
+  @GetMapping("/me/stars")
+  public ResponseEntity<ApiResponse<Page<QuizResponse>>> getMyStarredQuizzes(
+      @AuthenticationPrincipal CustomUserDetails userDetails,
+      @RequestParam(required = false) String title,
+      @PageableDefault(size = 20) Pageable pageable) {
+    Page<QuizResponse> page =
+        quizService.getMyStarredQuizzes(userDetails.getUser().getId(), title, pageable);
+    return ResponseEntity.ok(ApiResponse.ok(page));
+  }
+
+  @Operation(
       summary = "타 유저의 퀴즈 목록",
       description = "외부 뷰어는 PUBLIC 만, 본인은 전체. 비공개 프로필 + 외부 뷰어 = 빈 페이지")
   @GetMapping("/{publicId}/quizzes")
@@ -218,13 +234,18 @@ public class UserController {
     return ResponseEntity.ok(ApiResponse.ok(page));
   }
 
-  @Operation(summary = "내 풀이 기록", description = "completedAt DESC. size 디폴트 20 / 최대 50. 인증 필수")
+  @Operation(
+      summary = "내 풀이 기록",
+      description =
+          "퀴즈 단위 그룹화 — quiz 당 최신 기록 1건 + 누적 풀이 횟수(attemptCount). 최신 풀이 시각 DESC. "
+              + "title 로 퀴즈 제목 부분일치 검색(옵션). size 디폴트 20 / 최대 50. 인증 필수")
   @GetMapping("/me/attempts")
   public ResponseEntity<ApiResponse<Page<AttemptListItemResponse>>> getMyAttempts(
       @AuthenticationPrincipal CustomUserDetails userDetails,
+      @RequestParam(required = false) String title,
       @PageableDefault(size = 20) Pageable pageable) {
     Page<AttemptListItemResponse> page =
-        quizAttemptService.getMyAttempts(userDetails.getUser().getId(), pageable);
+        quizAttemptService.getMyAttempts(userDetails.getUser().getId(), title, pageable);
     return ResponseEntity.ok(ApiResponse.ok(page));
   }
 

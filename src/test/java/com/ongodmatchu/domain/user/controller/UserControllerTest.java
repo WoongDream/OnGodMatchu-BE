@@ -3,6 +3,7 @@ package com.ongodmatchu.domain.user.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -17,6 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.quiz.dto.AttemptListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizSort;
 import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
@@ -596,6 +598,77 @@ class UserControllerTest {
         .andExpect(jsonPath("$.data.totalElements").value(0));
   }
 
+  // ============ GET /api/users/me/stars ============
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_인증된유저_200_Page반환_isStarred true")
+  void getMyStarredQuizzes_authenticated_returns200WithPage() throws Exception {
+    QuizResponse item =
+        new QuizResponse(
+            50L,
+            UUID.fromString("00000000-0000-0000-0000-000000000050"),
+            "스타한 퀴즈",
+            "재밌는 퀴즈",
+            "game",
+            "thumbnails/star.png",
+            "https://cdn.example.com/star.png",
+            15,
+            7,
+            3,
+            2,
+            true,
+            66.6,
+            QuizVisibility.PUBLIC,
+            "작성자",
+            OffsetDateTime.of(2025, 2, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
+    Page<QuizResponse> page = new PageImpl<>(List.of(item));
+    given(quizService.getMyStarredQuizzes(eq(1L), isNull(), any(Pageable.class))).willReturn(page);
+
+    mockMvc
+        .perform(get("/api/users/me/stars"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.content[0].title").value("스타한 퀴즈"))
+        .andExpect(jsonPath("$.data.content[0].isStarred").value(true))
+        .andExpect(jsonPath("$.data.content[0].playCount").value(15))
+        .andExpect(jsonPath("$.data.content[0].starCount").value(7))
+        .andExpect(jsonPath("$.data.content[0].commentCount").value(3))
+        .andExpect(jsonPath("$.data.content[0].shareCount").value(2))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_스타없음_빈페이지반환_200")
+  void getMyStarredQuizzes_noStars_returnsEmptyPage() throws Exception {
+    given(quizService.getMyStarredQuizzes(eq(1L), isNull(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/me/stars"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_title쿼리_서비스로전달_200")
+  void getMyStarredQuizzes_withTitle_forwardsTitleToService() throws Exception {
+    given(quizService.getMyStarredQuizzes(eq(1L), eq("bar"), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/me/stars").param("title", "bar"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    org.mockito.Mockito.verify(quizService)
+        .getMyStarredQuizzes(eq(1L), titleCaptor.capture(), any(Pageable.class));
+    org.assertj.core.api.Assertions.assertThat(titleCaptor.getValue()).isEqualTo("bar");
+  }
+
   // ============ GET /api/users/{publicId}/quizzes ============
 
   @Test
@@ -701,12 +774,19 @@ class UserControllerTest {
             "게임",
             null,
             null,
+            7,
+            2,
+            1,
+            0,
             4,
             5,
             80.0,
+            null,
+            null,
+            1L,
             OffsetDateTime.of(2025, 5, 1, 12, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
-    given(quizAttemptService.getMyAttempts(eq(1L), any(Pageable.class))).willReturn(page);
+    given(quizAttemptService.getMyAttempts(eq(1L), isNull(), any(Pageable.class))).willReturn(page);
 
     mockMvc
         .perform(get("/api/users/me/attempts"))
@@ -724,7 +804,7 @@ class UserControllerTest {
   @Test
   @DisplayName("getMyAttempts_풀이기록없음_200_빈페이지반환")
   void getMyAttempts_noAttempts_returnsEmptyPage() throws Exception {
-    given(quizAttemptService.getMyAttempts(eq(1L), any(Pageable.class)))
+    given(quizAttemptService.getMyAttempts(eq(1L), isNull(), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of()));
 
     mockMvc
@@ -733,6 +813,23 @@ class UserControllerTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.content").isArray())
         .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  @Test
+  @DisplayName("getMyAttempts_title쿼리_서비스로전달_200")
+  void getMyAttempts_withTitle_forwardsTitleToService() throws Exception {
+    given(quizAttemptService.getMyAttempts(eq(1L), eq("foo"), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/me/attempts").param("title", "foo"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    org.mockito.Mockito.verify(quizAttemptService)
+        .getMyAttempts(eq(1L), titleCaptor.capture(), any(Pageable.class));
+    org.assertj.core.api.Assertions.assertThat(titleCaptor.getValue()).isEqualTo("foo");
   }
 
   // ============ GET /api/users/{publicId}/attempts ============
@@ -751,9 +848,16 @@ class UserControllerTest {
             "음악",
             null,
             null,
+            12,
+            3,
+            1,
+            0,
             3,
             5,
             60.0,
+            null,
+            null,
+            1L,
             OffsetDateTime.of(2025, 4, 1, 10, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
     given(
@@ -802,9 +906,16 @@ class UserControllerTest {
             "애니메이션",
             null,
             null,
+            20,
+            5,
+            2,
+            1,
             5,
             5,
             100.0,
+            null,
+            null,
+            1L,
             OffsetDateTime.of(2025, 3, 15, 9, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
     given(quizAttemptService.getAttemptsByPublicId(eq(targetPublicId), eq(1L), any(Pageable.class)))

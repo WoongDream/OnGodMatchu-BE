@@ -48,12 +48,26 @@ public class QuizAttempt {
   @Column(name = "completed_at", nullable = false, updatable = false)
   private LocalDateTime completedAt;
 
+  /** 풀이 당시 문항당 타이머 설정(초). null = 타이머 없음(또는 레거시 기록). */
+  @Column(name = "time_limit_sec")
+  private Integer timeLimitSec;
+
+  /** 풀이 당시 상위 백분위 스냅샷(0~100). null = 첫 응시(응시 < 2) 또는 레거시 기록. */
+  @Column(name = "top_percentile")
+  private Double topPercentile;
+
   @Builder
-  private QuizAttempt(User user, Quiz quiz, int score, int totalQuestions) {
+  private QuizAttempt(User user, Quiz quiz, int score, int totalQuestions, Integer timeLimitSec) {
     this.user = user;
     this.quiz = quiz;
     this.score = score;
     this.totalQuestions = totalQuestions;
+    this.timeLimitSec = timeLimitSec;
+  }
+
+  /** 채점 후 산출한 상위 백분위 스냅샷을 기록 (관리되는 엔티티의 dirty checking 으로 flush). */
+  public void assignTopPercentile(Double topPercentile) {
+    this.topPercentile = topPercentile;
   }
 
   @PrePersist

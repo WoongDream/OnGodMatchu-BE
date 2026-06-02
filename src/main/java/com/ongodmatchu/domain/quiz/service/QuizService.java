@@ -105,6 +105,39 @@ public class QuizService {
                 rateByQuizId.get(q.getId())));
   }
 
+  /**
+   * 내가 스타 준 퀴즈 목록 (내 전용). 스타 누른 시각 DESC, 메인 목록과 동일한 QuizResponse 스키마. isStarred 는 전부 true. title 로
+   * 제목 부분일치 검색(옵션). size 디폴트 20 / 최대 50.
+   */
+  @Transactional(readOnly = true)
+  public Page<QuizResponse> getMyStarredQuizzes(Long userId, String title, Pageable pageable) {
+    Pageable effective = applyPageDefaultsNoSort(pageable);
+    Page<Quiz> page =
+        quizStarRepository.findStarredQuizzesByUserId(userId, normalizeTitle(title), effective);
+
+    List<String> keys =
+        page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
+    Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
+    Map<Long, Double> rateByQuizId = rateMapForPage(page);
+
+    return page.map(
+        q ->
+            QuizResponse.from(
+                q, lookupUrl(presigned, q.getThumbnailKey()), true, rateByQuizId.get(q.getId())));
+  }
+
+  private Pageable applyPageDefaultsNoSort(Pageable pageable) {
+    int size = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
+    if (size <= 0) {
+      size = DEFAULT_PAGE_SIZE;
+    }
+    return PageRequest.of(pageable.getPageNumber(), size);
+  }
+
+  private static String normalizeTitle(String title) {
+    return (title == null || title.isBlank()) ? null : title.trim();
+  }
+
   private Set<Long> starredQuizIdsForPage(Long viewerUserId, Page<Quiz> page) {
     if (viewerUserId == null || page.isEmpty()) {
       return Collections.emptySet();

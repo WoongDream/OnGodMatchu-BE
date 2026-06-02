@@ -80,7 +80,7 @@ class QuizAttemptControllerTest {
   @DisplayName("submit_로그인_정상요청_201_AttemptResultResponse반환")
   void submit_authenticated_validRequest_returns201WithResponse() throws Exception {
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), 10);
 
     AttemptResultResponse response =
         new AttemptResultResponse(
@@ -115,7 +115,7 @@ class QuizAttemptControllerTest {
   @DisplayName("submit_비로그인_201_attemptId_null반환")
   void submit_anonymous_returns201WithNullAttemptId() throws Exception {
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), null);
 
     AttemptResultResponse response =
         new AttemptResultResponse(
@@ -157,6 +157,42 @@ class QuizAttemptControllerTest {
   @DisplayName("submit_answers필드없음_400반환")
   void submit_missingAnswers_returns400() throws Exception {
     String body = "{}";
+
+    mockMvc
+        .perform(
+            post("/api/quizzes/1/attempts").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false));
+  }
+
+  @Test
+  @DisplayName("submit_timeLimitSec포함_201수신")
+  void submit_withTimeLimitSec_returns201() throws Exception {
+    String body = "{\"answers\":[{\"questionId\":10,\"userAnswer\":\"정답\"}],\"timeLimitSec\":10}";
+
+    AttemptResultResponse response =
+        new AttemptResultResponse(
+            100L,
+            1,
+            1,
+            100.0,
+            null,
+            List.of(new AttemptItemResultResponse(10L, true, "정답", "정답", null)));
+    given(quizAttemptService.submit(eq(1L), eq(1L), any(AttemptCreateRequest.class)))
+        .willReturn(response);
+
+    mockMvc
+        .perform(
+            post("/api/quizzes/1/attempts").contentType(MediaType.APPLICATION_JSON).content(body))
+        .andExpect(status().isCreated())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.attemptId").value(100));
+  }
+
+  @Test
+  @DisplayName("submit_timeLimitSec_0이하_400반환")
+  void submit_nonPositiveTimeLimitSec_returns400() throws Exception {
+    String body = "{\"answers\":[{\"questionId\":10,\"userAnswer\":\"정답\"}],\"timeLimitSec\":0}";
 
     mockMvc
         .perform(
@@ -217,7 +253,7 @@ class QuizAttemptControllerTest {
   @DisplayName("submit_PRIVATE퀴즈_외부뷰어_404반환")
   void submit_privateQuiz_externalViewer_returns404() throws Exception {
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "답")), null);
 
     given(quizAttemptService.submit(eq(1L), eq(1L), any(AttemptCreateRequest.class)))
         .willThrow(new BusinessException(ErrorCode.QUIZ_NOT_FOUND));
@@ -236,7 +272,7 @@ class QuizAttemptControllerTest {
   @DisplayName("submit_잘못된questionId_404반환")
   void submit_invalidQuestionId_returns404() throws Exception {
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(999L, "답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(999L, "답")), null);
 
     given(quizAttemptService.submit(eq(1L), eq(1L), any(AttemptCreateRequest.class)))
         .willThrow(new BusinessException(ErrorCode.QUESTION_NOT_FOUND));
@@ -255,7 +291,7 @@ class QuizAttemptControllerTest {
   @DisplayName("submit_응시자_2명이상_topPercentile_숫자응답")
   void submit_multipleAttempts_topPercentileSerialized() throws Exception {
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), null);
 
     AttemptResultResponse response =
         new AttemptResultResponse(
@@ -285,7 +321,7 @@ class QuizAttemptControllerTest {
   void submit_mixedResults_incorrectFlagIncluded() throws Exception {
     AttemptCreateRequest request =
         new AttemptCreateRequest(
-            List.of(new AttemptAnswerRequest(10L, "정답"), new AttemptAnswerRequest(11L, "틀림")));
+            List.of(new AttemptAnswerRequest(10L, "정답"), new AttemptAnswerRequest(11L, "틀림")), 30);
 
     AttemptResultResponse response =
         new AttemptResultResponse(
