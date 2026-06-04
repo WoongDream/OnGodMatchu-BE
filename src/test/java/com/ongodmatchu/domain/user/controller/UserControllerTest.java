@@ -6,10 +6,12 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -35,6 +37,9 @@ import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.service.UserService;
 import com.ongodmatchu.domain.user.service.WithdrawalCodeService;
+import com.ongodmatchu.global.exception.BusinessException;
+import com.ongodmatchu.global.exception.ErrorCode;
+import com.ongodmatchu.global.exception.RateLimitException;
 import com.ongodmatchu.infra.s3.PresignedUrlRequest;
 import com.ongodmatchu.infra.s3.PresignedUrlResponse;
 import java.time.OffsetDateTime;
@@ -427,6 +432,81 @@ class UserControllerTest {
         .perform(post("/api/users/me/withdrawal-code"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
+  }
+
+  // ============ POST /api/users/me/withdrawal-code/verify (코드 dry-run 검증) ============
+
+  @Test
+  @DisplayName("verifyWithdrawalCode_정상_200반환_서비스위임")
+  void verifyWithdrawalCode_returns200() throws Exception {
+    String body = "{\"verificationCode\":\"123456\"}";
+    willDoNothing().given(withdrawalCodeService).verify(eq(1L), eq("123456"), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/users/me/withdrawal-code/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    org.mockito.Mockito.verify(withdrawalCodeService).verify(eq(1L), eq("123456"), anyString());
+  }
+
+  @Test
+  @DisplayName("verifyWithdrawalCode_잘못된코드_400_INVALID_VERIFICATION_CODE")
+  void verifyWithdrawalCode_invalidCode_returns400() throws Exception {
+    String body = "{\"verificationCode\":\"000000\"}";
+    willThrow(new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE))
+        .given(withdrawalCodeService)
+        .verify(eq(1L), eq("000000"), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/users/me/withdrawal-code/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("INVALID_VERIFICATION_CODE"));
+  }
+
+  @Test
+  @DisplayName("verifyWithdrawalCode_만료된코드_400_VERIFICATION_CODE_EXPIRED")
+  void verifyWithdrawalCode_expiredCode_returns400() throws Exception {
+    String body = "{\"verificationCode\":\"654321\"}";
+    willThrow(new BusinessException(ErrorCode.VERIFICATION_CODE_EXPIRED))
+        .given(withdrawalCodeService)
+        .verify(eq(1L), eq("654321"), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/users/me/withdrawal-code/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("VERIFICATION_CODE_EXPIRED"));
+  }
+
+  @Test
+  @DisplayName("verifyWithdrawalCode_시도횟수초과_429_RATE_LIMITED_retryAfter헤더포함")
+  void verifyWithdrawalCode_rateLimited_returns429WithRetryAfter() throws Exception {
+    String body = "{\"verificationCode\":\"123456\"}";
+    willThrow(new RateLimitException(60))
+        .given(withdrawalCodeService)
+        .verify(eq(1L), eq("123456"), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/users/me/withdrawal-code/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(header().string("Retry-After", "60"))
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"))
+        .andExpect(jsonPath("$.error.retryAfter").value(60));
   }
 
   @Test

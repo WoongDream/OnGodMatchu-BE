@@ -15,6 +15,7 @@ import com.ongodmatchu.domain.user.dto.PublicProfileSummaryResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
+import com.ongodmatchu.domain.user.dto.WithdrawalCodeVerifyRequest;
 import com.ongodmatchu.domain.user.service.UserService;
 import com.ongodmatchu.domain.user.service.WithdrawalCodeService;
 import com.ongodmatchu.global.response.ApiResponse;
@@ -93,6 +94,20 @@ public class UserController {
   public ResponseEntity<ApiResponse<Void>> requestWithdrawalCode(
       @AuthenticationPrincipal CustomUserDetails userDetails, HttpServletRequest httpRequest) {
     withdrawalCodeService.sendCode(userDetails.getUser().getId(), httpRequest.getRemoteAddr());
+    return ResponseEntity.ok(ApiResponse.ok());
+  }
+
+  @Operation(
+      summary = "회원탈퇴 인증 코드 검증 (dry-run)",
+      description =
+          "탈퇴 확정 전 인증 버튼 클릭 시 코드 유효성만 즉시 검증. 코드를 소비하지 않으므로 최종 DELETE /me 에서 동일 코드로 다시 검증·소비된다. brute-force 방어로 시도 횟수 제한(쿨다운 없이 이메일 1h 10회 / IP 1h 20회) — 초과 시 429 RATE_LIMITED + Retry-After. 성공 시 200, 실패 시 INVALID_VERIFICATION_CODE/VERIFICATION_CODE_EXPIRED(400).")
+  @PostMapping("/me/withdrawal-code/verify")
+  public ResponseEntity<ApiResponse<Void>> verifyWithdrawalCode(
+      @AuthenticationPrincipal CustomUserDetails userDetails,
+      @RequestBody WithdrawalCodeVerifyRequest request,
+      HttpServletRequest httpRequest) {
+    withdrawalCodeService.verify(
+        userDetails.getUser().getId(), request.verificationCode(), httpRequest.getRemoteAddr());
     return ResponseEntity.ok(ApiResponse.ok());
   }
 
