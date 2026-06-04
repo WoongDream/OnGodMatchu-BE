@@ -5,6 +5,7 @@ import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
+import com.ongodmatchu.domain.quiz.dto.PublicProfileStats;
 import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuestionResponse;
 import com.ongodmatchu.domain.quiz.dto.QuestionUpdateRequest;
@@ -424,6 +425,22 @@ public class QuizService {
         avgCorrectRate,
         solvedCount,
         avgSolveRate);
+  }
+
+  /**
+   * 타인 시점 프로필 요약 통계 — 전부 PUBLIC 퀴즈 기준 (비공개 퀴즈는 타인 노출/통계 제외). 만든 퀴즈(개수/총플레이/받은스타)는 PUBLIC 집계,
+   * 풀어봄/정답률은 PUBLIC 퀴즈 attempt 한정.
+   */
+  @Transactional(readOnly = true)
+  public PublicProfileStats getPublicProfileStats(Long userId) {
+    QuizAggregateRow row =
+        quizRepository.aggregateByUserIdAndVisibility(userId, QuizVisibility.PUBLIC);
+    long solvedCount =
+        quizAttemptRepository.countByUserIdAndQuizVisibility(userId, QuizVisibility.PUBLIC);
+    Double avgSolveRate =
+        quizAttemptRepository.avgSolveRateOfByQuizVisibility(userId, QuizVisibility.PUBLIC);
+    return new PublicProfileStats(
+        row.getQuizCount(), row.getPlays(), row.getStars(), solvedCount, avgSolveRate);
   }
 
   private Pageable applyPageDefaults(Pageable pageable, QuizSort sort) {

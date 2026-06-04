@@ -3,9 +3,11 @@ package com.ongodmatchu.domain.user.service;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.auth.validation.TermsPolicy;
+import com.ongodmatchu.domain.quiz.dto.PublicProfileStats;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
+import com.ongodmatchu.domain.user.dto.PublicProfileSummaryResponse;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
@@ -91,6 +93,34 @@ public class UserService {
     return isOwner
         ? toResponse(user)
         : UserResponse.from(user, resolveImageUrl(user), calcActiveDays(user.getCreatedAt()));
+  }
+
+  /**
+   * 프로필 모달용 타인 프로필 요약. 식별 정보(닉네임/이미지/소개) + PUBLIC 기준 통계. 비공개 프로필도 통계는 노출 (FE 가 isProfilePublic 으로
+   * "프로필 보러가기" 버튼만 분기). 탈퇴(isActive=false)/시스템 계정은 {@link ErrorCode#USER_NOT_FOUND}.
+   */
+  @Transactional(readOnly = true)
+  public PublicProfileSummaryResponse getProfileSummary(UUID publicId) {
+    User user =
+        userRepository
+            .findByPublicId(publicId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    if (!user.isActive() || user.isSystem()) {
+      throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+    }
+
+    PublicProfileStats stats = quizService.getPublicProfileStats(user.getId());
+    return new PublicProfileSummaryResponse(
+        user.getPublicId(),
+        user.getNickname(),
+        resolveImageUrl(user),
+        user.getBio(),
+        user.isProfilePublic(),
+        stats.solvedCount(),
+        stats.avgSolveRate(),
+        stats.quizCount(),
+        stats.totalPlayCount(),
+        stats.totalStarCount());
   }
 
   @Transactional

@@ -26,6 +26,7 @@ import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
+import com.ongodmatchu.domain.user.dto.PublicProfileSummaryResponse;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
@@ -252,6 +253,66 @@ class UserControllerTest {
         .perform(get("/api/users/{publicId}", publicId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
+  }
+
+  // ============ GET /api/users/{publicId}/profile/summary ============
+
+  @Test
+  @DisplayName("getProfileSummary_정상_200_식별정보와통계반환")
+  void getProfileSummary_returns200WithIdentityAndStats() throws Exception {
+    UUID publicId = UUID.fromString("00000000-0000-0000-0000-000000000009");
+    PublicProfileSummaryResponse summary =
+        new PublicProfileSummaryResponse(
+            publicId,
+            "요약유저",
+            "https://cdn.example.com/default.png",
+            "안녕하세요",
+            true,
+            8L,
+            75.5,
+            4L,
+            120L,
+            30L);
+    given(userService.getProfileSummary(eq(publicId))).willReturn(summary);
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/profile/summary", publicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nickname").value("요약유저"))
+        .andExpect(jsonPath("$.data.isProfilePublic").value(true))
+        .andExpect(jsonPath("$.data.solvedCount").value(8))
+        .andExpect(jsonPath("$.data.avgSolveRate").value(75.5))
+        .andExpect(jsonPath("$.data.quizCount").value(4))
+        .andExpect(jsonPath("$.data.totalPlayCount").value(120))
+        .andExpect(jsonPath("$.data.totalStarCount").value(30));
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_비로그인뷰어_200반환")
+  void getProfileSummary_anonymousViewer_returns200() throws Exception {
+    UUID publicId = UUID.fromString("00000000-0000-0000-0000-00000000000a");
+    PublicProfileSummaryResponse summary =
+        new PublicProfileSummaryResponse(
+            publicId,
+            "비공개유저",
+            "https://cdn.example.com/default.png",
+            null,
+            false,
+            0L,
+            null,
+            0L,
+            0L,
+            0L);
+    given(userService.getProfileSummary(eq(publicId))).willReturn(summary);
+
+    SecurityContextHolder.clearContext();
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/profile/summary", publicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.isProfilePublic").value(false));
   }
 
   // ============ PATCH /api/users/me ============

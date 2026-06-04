@@ -15,9 +15,11 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
+import com.ongodmatchu.domain.quiz.dto.PublicProfileStats;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
+import com.ongodmatchu.domain.user.dto.PublicProfileSummaryResponse;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
@@ -311,6 +313,103 @@ class UserServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
+  }
+
+  // ============ getProfileSummary ============
+
+  @Test
+  @DisplayName("getProfileSummary_공개프로필_식별정보와통계매핑_isProfilePublic_true")
+  void getProfileSummary_publicProfile_mapsIdentityAndStats() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.updateProfilePublic(true);
+    user.updateBio("안녕하세요");
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(quizService.getPublicProfileStats(1L))
+        .willReturn(new PublicProfileStats(4L, 120L, 30L, 8L, 75.5));
+
+    PublicProfileSummaryResponse result = userService.getProfileSummary(publicId);
+
+    assertThat(result.userId()).isEqualTo(publicId);
+    assertThat(result.nickname()).isEqualTo("공개유저");
+    assertThat(result.profileImageUrl()).isEqualTo(DEFAULT_IMAGE_URL);
+    assertThat(result.bio()).isEqualTo("안녕하세요");
+    assertThat(result.isProfilePublic()).isTrue();
+    assertThat(result.solvedCount()).isEqualTo(8L);
+    assertThat(result.avgSolveRate()).isEqualTo(75.5);
+    assertThat(result.quizCount()).isEqualTo(4L);
+    assertThat(result.totalPlayCount()).isEqualTo(120L);
+    assertThat(result.totalStarCount()).isEqualTo(30L);
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_비공개프로필_통계는노출_isProfilePublic_false")
+  void getProfileSummary_privateProfile_stillExposesStats() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "비공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.updateProfilePublic(false);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(quizService.getPublicProfileStats(1L))
+        .willReturn(new PublicProfileStats(2L, 50L, 10L, 3L, 60.0));
+
+    PublicProfileSummaryResponse result = userService.getProfileSummary(publicId);
+
+    assertThat(result.isProfilePublic()).isFalse();
+    assertThat(result.solvedCount()).isEqualTo(3L);
+    assertThat(result.avgSolveRate()).isEqualTo(60.0);
+    assertThat(result.quizCount()).isEqualTo(2L);
+    assertThat(result.totalPlayCount()).isEqualTo(50L);
+    assertThat(result.totalStarCount()).isEqualTo(10L);
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_사용자미존재_USER_NOT_FOUND예외")
+  void getProfileSummary_userNotFound_throwsException() {
+    UUID unknownId = UUID.randomUUID();
+    given(userRepository.findByPublicId(unknownId)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> userService.getProfileSummary(unknownId))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+    then(quizService).should(never()).getPublicProfileStats(any());
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_탈퇴유저_isActive_false_USER_NOT_FOUND예외")
+  void getProfileSummary_withdrawnUser_throwsUserNotFound() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "탈퇴유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    ReflectionTestUtils.setField(user, "isActive", false);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+
+    assertThatThrownBy(() -> userService.getProfileSummary(publicId))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+    then(quizService).should(never()).getPublicProfileStats(any());
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_시스템계정_isSystem_true_USER_NOT_FOUND예외")
+  void getProfileSummary_systemAccount_throwsUserNotFound() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "시스템계정");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    ReflectionTestUtils.setField(user, "isSystem", true);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+
+    assertThatThrownBy(() -> userService.getProfileSummary(publicId))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+    then(quizService).should(never()).getPublicProfileStats(any());
   }
 
   // ============ updateMe ============

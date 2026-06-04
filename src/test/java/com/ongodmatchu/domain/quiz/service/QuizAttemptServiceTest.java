@@ -583,6 +583,25 @@ class QuizAttemptServiceTest {
         .thenReturn(latestAttempts);
   }
 
+  /**
+   * 외부/비로그인 시점 경로(findAttemptGroupsByUserIdAndVisibility(PUBLIC) → findLatestAttemptsPerQuiz) 공통
+   * stub. 본인 경로(stubGroups)의 자매 헬퍼로, 비공개 퀴즈 제외(visibility=PUBLIC) 조회를 흉내 낸다.
+   */
+  private void stubGroupsByVisibility(
+      Long userId,
+      Page<QuizAttemptRepository.AttemptGroupRow> groups,
+      List<QuizAttempt> latestAttempts) {
+    List<Long> quizIds =
+        groups.getContent().stream().map(QuizAttemptRepository.AttemptGroupRow::getQuizId).toList();
+    given(
+            quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+                eq(userId), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
+        .willReturn(groups);
+    lenient()
+        .when(quizAttemptRepository.findLatestAttemptsPerQuiz(eq(userId), eq(quizIds)))
+        .thenReturn(latestAttempts);
+  }
+
   @Test
   @DisplayName("getMyAttempts_그룹정상반환_s3batchPresign호출_attemptCount전달")
   void getMyAttempts_returnsPage_andCallsBatchPresign() {
@@ -817,13 +836,19 @@ class QuizAttemptServiceTest {
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
     Page<QuizAttemptRepository.AttemptGroupRow> groups =
         new PageImpl<>(List.of(stubGroupRow(1L, 1L)), PageRequest.of(0, 20), 1);
-    stubGroups(2L, null, groups, List.of(attempt));
+    stubGroupsByVisibility(2L, groups, List.of(attempt));
 
     Page<AttemptListItemResponse> result =
         quizAttemptService.getAttemptsByPublicId(authorPublicId, 99L, PageRequest.of(0, 20));
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).score()).isEqualTo(2);
+    // 외부 뷰어는 PUBLIC 한정 그룹 조회를 사용하고, 전체 조회는 사용하지 않는다.
+    then(quizAttemptRepository)
+        .should()
+        .findAttemptGroupsByUserIdAndVisibility(
+            eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
+    then(quizAttemptRepository).should(never()).findAttemptGroupsByUserId(any(), any(), any());
   }
 
   @Test
@@ -836,28 +861,57 @@ class QuizAttemptServiceTest {
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
     Page<QuizAttemptRepository.AttemptGroupRow> groups =
         new PageImpl<>(List.of(stubGroupRow(1L, 1L)), PageRequest.of(0, 20), 1);
-    stubGroups(2L, null, groups, List.of(attempt));
+    stubGroupsByVisibility(2L, groups, List.of(attempt));
 
     Page<AttemptListItemResponse> result =
         quizAttemptService.getAttemptsByPublicId(authorPublicId, null, PageRequest.of(0, 20));
 
     assertThat(result.getContent()).hasSize(1);
+    // 비로그인도 외부 뷰어와 동일하게 PUBLIC 한정 그룹 조회를 사용한다.
+    then(quizAttemptRepository)
+        .should()
+        .findAttemptGroupsByUserIdAndVisibility(
+            eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
+    then(quizAttemptRepository).should(never()).findAttemptGroupsByUserId(any(), any(), any());
   }
 
   @Test
-  @DisplayName("getAttemptsByPublicId_그룹조회_title은항상null로전달")
-  void getAttemptsByPublicId_alwaysPassesNullTitle() {
+  @DisplayName("getAttemptsByPublicId_외부뷰어_PUBLIC한정_그룹조회사용")
+  void getAttemptsByPublicId_externalViewer_usesVisibilityScopedQuery() {
     User author = testUser(2L);
     UUID authorPublicId = author.getPublicId();
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizAttemptRepository.findAttemptGroupsByUserId(eq(2L), isNull(), any(Pageable.class)))
+    given(
+            quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+                eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
     quizAttemptService.getAttemptsByPublicId(authorPublicId, null, PageRequest.of(0, 20));
 
     then(quizAttemptRepository)
         .should()
+        .findAttemptGroupsByUserIdAndVisibility(
+            eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
+    then(quizAttemptRepository).should(never()).findAttemptGroupsByUserId(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("getAttemptsByPublicId_본인_전체그룹조회_title은null로전달")
+  void getAttemptsByPublicId_owner_usesFullQueryWithNullTitle() {
+    User author = testUser(2L);
+    UUID authorPublicId = author.getPublicId();
+    given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
+    given(quizAttemptRepository.findAttemptGroupsByUserId(eq(2L), isNull(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+    quizAttemptService.getAttemptsByPublicId(authorPublicId, 2L, PageRequest.of(0, 20));
+
+    then(quizAttemptRepository)
+        .should()
         .findAttemptGroupsByUserId(eq(2L), isNull(), any(Pageable.class));
+    then(quizAttemptRepository)
+        .should(never())
+        .findAttemptGroupsByUserIdAndVisibility(any(), any(), any());
   }
 
   @Test
@@ -866,7 +920,9 @@ class QuizAttemptServiceTest {
     User author = testUser(2L);
     UUID authorPublicId = author.getPublicId();
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizAttemptRepository.findAttemptGroupsByUserId(eq(2L), isNull(), any(Pageable.class)))
+    given(
+            quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+                eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 50), 0));
 
     quizAttemptService.getAttemptsByPublicId(authorPublicId, null, PageRequest.of(0, 200));
@@ -874,7 +930,8 @@ class QuizAttemptServiceTest {
     ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
     then(quizAttemptRepository)
         .should()
-        .findAttemptGroupsByUserId(eq(2L), isNull(), captor.capture());
+        .findAttemptGroupsByUserIdAndVisibility(
+            eq(2L), eq(QuizVisibility.PUBLIC), captor.capture());
     assertThat(captor.getValue().getPageSize()).isEqualTo(50);
   }
 

@@ -1,6 +1,7 @@
 package com.ongodmatchu.domain.quiz.repository;
 
 import com.ongodmatchu.domain.quiz.entity.QuizAttempt;
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
@@ -33,6 +34,25 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> 
               + "AND (CAST(:title AS string) IS NULL OR LOWER(a.quiz.title) LIKE LOWER(CONCAT('%', CAST(:title AS string), '%')))")
   Page<AttemptGroupRow> findAttemptGroupsByUserId(
       @Param("userId") Long userId, @Param("title") String title, Pageable pageable);
+
+  /**
+   * 타인 시점 "푼 퀴즈" 목록용 — visibility 한정 그룹화 (PUBLIC 만 넘겨 비공개 퀴즈 attempt 제외). 본인이 자기 비공개 퀴즈를 푼 기록이 외부에
+   * 노출되지 않도록 한다. 정렬은 쿼리에 박혀 있어 호출자는 정렬 없는 Pageable 을 넘긴다.
+   */
+  @Query(
+      value =
+          "SELECT a.quiz.id AS quizId, COUNT(a) AS attemptCount "
+              + "FROM QuizAttempt a "
+              + "WHERE a.user.id = :userId AND a.quiz.visibility = :visibility "
+              + "GROUP BY a.quiz.id "
+              + "ORDER BY MAX(a.completedAt) DESC",
+      countQuery =
+          "SELECT COUNT(DISTINCT a.quiz.id) FROM QuizAttempt a "
+              + "WHERE a.user.id = :userId AND a.quiz.visibility = :visibility")
+  Page<AttemptGroupRow> findAttemptGroupsByUserIdAndVisibility(
+      @Param("userId") Long userId,
+      @Param("visibility") QuizVisibility visibility,
+      Pageable pageable);
 
   /**
    * 주어진 퀴즈 ID 들에 대해 해당 유저의 최신 attempt 1건씩 (quiz fetch join). 최신 기준은 MAX(id) — IDENTITY 단조 증가라
@@ -98,6 +118,24 @@ public interface QuizAttemptRepository extends JpaRepository<QuizAttempt, Long> 
 
   /** 본인이 푼 횟수 — user_id 로 필터하므로 비로그인(user=null) attempt 는 자연 제외. */
   long countByUserId(Long userId);
+
+  /** 타인 시점 "풀어봄" — visibility 한정 attempt 수 (PUBLIC 만 넘겨 비공개 퀴즈 풀이 제외). */
+  @Query(
+      "SELECT COUNT(a) FROM QuizAttempt a "
+          + "WHERE a.user.id = :userId AND a.quiz.visibility = :visibility")
+  long countByUserIdAndQuizVisibility(
+      @Param("userId") Long userId, @Param("visibility") QuizVisibility visibility);
+
+  /**
+   * 타인 시점 "정답률" — visibility 한정 평균 정답률 (0~100). 산출: SUM(score)*100/SUM(totalQuestions). 시도 0이면 SUM
+   * 이 null 이라 null 반환.
+   */
+  @Query(
+      "SELECT (SUM(a.score) * 100.0 / SUM(a.totalQuestions)) "
+          + "FROM QuizAttempt a "
+          + "WHERE a.user.id = :userId AND a.quiz.visibility = :visibility")
+  Double avgSolveRateOfByQuizVisibility(
+      @Param("userId") Long userId, @Param("visibility") QuizVisibility visibility);
 
   /**
    * 본인이 푼 평균 정답률 (0~100). 산출: 본인 attempts 의 SUM(score)*100/SUM(totalQuestions). 시도 0이면 SUM 이 null

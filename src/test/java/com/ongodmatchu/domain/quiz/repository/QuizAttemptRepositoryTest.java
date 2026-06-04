@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.ongodmatchu.domain.quiz.entity.Quiz;
 import com.ongodmatchu.domain.quiz.entity.QuizAttempt;
+import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
 import com.ongodmatchu.domain.quiz.repository.QuizAttemptRepository.AttemptGroupRow;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
@@ -45,6 +46,11 @@ class QuizAttemptRepositoryTest {
 
   private Quiz savedQuiz(User owner, String title) {
     return quizRepository.save(Quiz.builder().user(owner).title(title).category("general").build());
+  }
+
+  private Quiz savedQuiz(User owner, String title, QuizVisibility visibility) {
+    return quizRepository.save(
+        Quiz.builder().user(owner).title(title).category("general").visibility(visibility).build());
   }
 
   private void saveAttempt(User user, Quiz quiz, int score, int totalQuestions) {
@@ -288,5 +294,67 @@ class QuizAttemptRepositoryTest {
     QuizAttempt reloaded = quizAttemptRepository.findById(attempt.getId()).orElseThrow();
     assertThat(reloaded.getTimeLimitSec()).isEqualTo(10);
     assertThat(reloaded.getTopPercentile()).isEqualTo(4.0);
+  }
+
+  // ============ visibility 한정 조회 — PUBLIC 조회 시 PRIVATE 풀이 제외 ============
+
+  @Test
+  @DisplayName("findAttemptGroupsByUserIdAndVisibility_PUBLIC조회_PRIVATE퀴즈풀이는_그룹에서_제외된다")
+  void findAttemptGroupsByUserIdAndVisibility_publicExcludesPrivate() {
+    User solver = savedUser("solver@example.com", "푸는사람");
+    Quiz publicQuiz = savedQuiz(solver, "공개 퀴즈", QuizVisibility.PUBLIC);
+    Quiz privateQuiz = savedQuiz(solver, "비공개 퀴즈", QuizVisibility.PRIVATE);
+
+    saveAttempt(solver, publicQuiz, 3, 5);
+    saveAttempt(solver, publicQuiz, 4, 5);
+    saveAttempt(solver, privateQuiz, 2, 5);
+    em.flush();
+
+    Page<AttemptGroupRow> page =
+        quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+            solver.getId(), QuizVisibility.PUBLIC, PageRequest.of(0, 10));
+
+    assertThat(page.getTotalElements()).isEqualTo(1L);
+    assertThat(page.getContent().get(0).getQuizId()).isEqualTo(publicQuiz.getId());
+    assertThat(page.getContent().get(0).getAttemptCount()).isEqualTo(2L);
+  }
+
+  @Test
+  @DisplayName("countByUserIdAndQuizVisibility_PUBLIC조회_PRIVATE퀴즈풀이는_세지않는다")
+  void countByUserIdAndQuizVisibility_publicExcludesPrivate() {
+    User solver = savedUser("solver@example.com", "푸는사람");
+    Quiz publicQuiz = savedQuiz(solver, "공개 퀴즈", QuizVisibility.PUBLIC);
+    Quiz privateQuiz = savedQuiz(solver, "비공개 퀴즈", QuizVisibility.PRIVATE);
+
+    saveAttempt(solver, publicQuiz, 3, 5);
+    saveAttempt(solver, publicQuiz, 4, 5);
+    saveAttempt(solver, privateQuiz, 2, 5);
+    saveAttempt(solver, privateQuiz, 1, 5);
+    em.flush();
+
+    assertThat(
+            quizAttemptRepository.countByUserIdAndQuizVisibility(
+                solver.getId(), QuizVisibility.PUBLIC))
+        .isEqualTo(2L);
+  }
+
+  @Test
+  @DisplayName("avgSolveRateOfByQuizVisibility_PUBLIC조회_PRIVATE퀴즈풀이는_평균산출에서_제외된다")
+  void avgSolveRateOfByQuizVisibility_publicExcludesPrivate() {
+    User solver = savedUser("solver@example.com", "푸는사람");
+    Quiz publicQuiz = savedQuiz(solver, "공개 퀴즈", QuizVisibility.PUBLIC);
+    Quiz privateQuiz = savedQuiz(solver, "비공개 퀴즈", QuizVisibility.PRIVATE);
+
+    // PUBLIC 만: SUM(score)=8, SUM(totalQuestions)=10 → 80.0
+    saveAttempt(solver, publicQuiz, 3, 5);
+    saveAttempt(solver, publicQuiz, 5, 5);
+    // PRIVATE 풀이는 평균에 영향 없어야 함 (포함되면 60.0 으로 떨어짐)
+    saveAttempt(solver, privateQuiz, 0, 10);
+    em.flush();
+
+    assertThat(
+            quizAttemptRepository.avgSolveRateOfByQuizVisibility(
+                solver.getId(), QuizVisibility.PUBLIC))
+        .isEqualTo(80.0);
   }
 }

@@ -189,10 +189,16 @@ public class QuizAttemptService {
    */
   @Transactional(readOnly = true)
   public Page<AttemptListItemResponse> getMyAttempts(Long userId, String title, Pageable pageable) {
-    return mapGroupsToListItems(userId, normalizeTitle(title), applyPageDefaults(pageable));
+    Pageable effective = applyPageDefaults(pageable);
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        quizAttemptRepository.findAttemptGroupsByUserId(userId, normalizeTitle(title), effective);
+    return mapGroupsToListItems(userId, groups, effective);
   }
 
-  /** 외부 뷰어 + 비공개 프로필 → 빈 페이지. 본인이거나 공개 프로필이면 정상 반환. */
+  /**
+   * 외부 뷰어 + 비공개 프로필 → 빈 페이지. 본인은 전체, 외부 뷰어는 PUBLIC 퀴즈 풀이만 (비공개 퀴즈는 타인에게 노출/통계 제외 — 본인이 자기 비공개 퀴즈를 푼
+   * 기록도 외부엔 안 보인다).
+   */
   @Transactional(readOnly = true)
   public Page<AttemptListItemResponse> getAttemptsByPublicId(
       UUID publicId, Long viewerUserId, Pageable pageable) {
@@ -205,14 +211,17 @@ public class QuizAttemptService {
     if (!author.isProfilePublic() && !isOwner) {
       return Page.empty(effective);
     }
-    return mapGroupsToListItems(author.getId(), null, effective);
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        isOwner
+            ? quizAttemptRepository.findAttemptGroupsByUserId(author.getId(), null, effective)
+            : quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+                author.getId(), QuizVisibility.PUBLIC, effective);
+    return mapGroupsToListItems(author.getId(), groups, effective);
   }
 
   /** quiz 단위 그룹 페이지를 받아 각 그룹의 최신 attempt + 누적 횟수 + 썸네일 presign 으로 응답 매핑 (그룹 정렬 순서 보존). */
   private Page<AttemptListItemResponse> mapGroupsToListItems(
-      Long userId, String title, Pageable effective) {
-    Page<QuizAttemptRepository.AttemptGroupRow> groups =
-        quizAttemptRepository.findAttemptGroupsByUserId(userId, title, effective);
+      Long userId, Page<QuizAttemptRepository.AttemptGroupRow> groups, Pageable effective) {
     if (groups.isEmpty()) {
       return Page.empty(effective);
     }

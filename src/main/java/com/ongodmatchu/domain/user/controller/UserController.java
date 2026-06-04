@@ -11,6 +11,7 @@ import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
 import com.ongodmatchu.domain.user.dto.ProfileStatsResponse;
+import com.ongodmatchu.domain.user.dto.PublicProfileSummaryResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
@@ -217,6 +218,17 @@ public class UserController {
     Page<QuizResponse> page =
         quizService.getMyStarredQuizzes(userDetails.getUser().getId(), title, pageable);
     return ResponseEntity.ok(ApiResponse.ok(page));
+  }
+
+  @Operation(
+      summary = "타 유저 프로필 요약 (프로필 모달용)",
+      description =
+          "닉네임/소개 + 풀이 기록(풀어봄·정답률) + 만든 퀴즈(개수·총플레이·받은스타). 통계는 전부 PUBLIC 퀴즈 기준 (비공개 퀴즈 제외). "
+              + "비공개 프로필도 통계는 노출하며 FE 가 isProfilePublic 으로 '프로필 보러가기' 버튼만 분기. 탈퇴/시스템 계정 → USER_NOT_FOUND(404). 비로그인 허용")
+  @GetMapping("/{publicId}/profile/summary")
+  public ResponseEntity<ApiResponse<PublicProfileSummaryResponse>> getProfileSummary(
+      @PathVariable UUID publicId) {
+    return ResponseEntity.ok(ApiResponse.ok(userService.getProfileSummary(publicId)));
   }
 
   @Operation(

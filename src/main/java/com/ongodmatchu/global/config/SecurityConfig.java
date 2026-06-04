@@ -70,6 +70,7 @@ public class SecurityConfig {
                     .requestMatchers(
                         HttpMethod.GET,
                         "/api/users/*",
+                        "/api/users/*/profile/summary",
                         "/api/users/*/quizzes",
                         "/api/users/*/attempts")
                     .permitAll()

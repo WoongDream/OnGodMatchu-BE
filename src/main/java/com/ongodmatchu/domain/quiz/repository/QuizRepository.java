@@ -35,6 +35,17 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
           + "FROM Quiz q WHERE q.user.id = :userId")
   QuizAggregateRow aggregateByUserId(@Param("userId") Long userId);
 
+  /** 타인 시점 프로필 요약용 — visibility 한정 집계 (PUBLIC 만 넘겨 비공개 퀴즈 제외). */
+  @Query(
+      "SELECT COUNT(q) AS quizCount, "
+          + "COALESCE(SUM(q.playCount), 0) AS plays, "
+          + "COALESCE(SUM(q.starCount), 0) AS stars, "
+          + "COALESCE(SUM(q.commentCount), 0) AS comments, "
+          + "COALESCE(SUM(q.shareCount), 0) AS shares "
+          + "FROM Quiz q WHERE q.user.id = :userId AND q.visibility = :visibility")
+  QuizAggregateRow aggregateByUserIdAndVisibility(
+      @Param("userId") Long userId, @Param("visibility") QuizVisibility visibility);
+
   /**
    * 회원탈퇴 시 본인 소유 퀴즈를 시스템 관리자 계정으로 일괄 이전.
    *

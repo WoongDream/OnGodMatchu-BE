@@ -784,6 +784,53 @@ class QuizServiceTest {
     assertThat(stats.avgSolveRate()).isNull();
   }
 
+  // ============ getPublicProfileStats ============
+
+  @Test
+  @DisplayName("getPublicProfileStats_PUBLIC인자호출_모든필드매핑")
+  void getPublicProfileStats_mapsAllFieldsWithPublicVisibility() {
+    given(quizRepository.aggregateByUserIdAndVisibility(eq(1L), eq(QuizVisibility.PUBLIC)))
+        .willReturn(stubAggregateRow(4, 120, 25, 9, 3));
+    given(quizAttemptRepository.countByUserIdAndQuizVisibility(eq(1L), eq(QuizVisibility.PUBLIC)))
+        .willReturn(210L);
+    given(quizAttemptRepository.avgSolveRateOfByQuizVisibility(eq(1L), eq(QuizVisibility.PUBLIC)))
+        .willReturn(72.5);
+
+    com.ongodmatchu.domain.quiz.dto.PublicProfileStats stats =
+        quizService.getPublicProfileStats(1L);
+
+    assertThat(stats.quizCount()).isEqualTo(4L);
+    assertThat(stats.totalPlayCount()).isEqualTo(120L);
+    assertThat(stats.totalStarCount()).isEqualTo(25L);
+    assertThat(stats.solvedCount()).isEqualTo(210L);
+    assertThat(stats.avgSolveRate()).isEqualTo(72.5);
+    then(quizRepository).should().aggregateByUserIdAndVisibility(eq(1L), eq(QuizVisibility.PUBLIC));
+    then(quizAttemptRepository)
+        .should()
+        .countByUserIdAndQuizVisibility(eq(1L), eq(QuizVisibility.PUBLIC));
+    then(quizAttemptRepository)
+        .should()
+        .avgSolveRateOfByQuizVisibility(eq(1L), eq(QuizVisibility.PUBLIC));
+  }
+
+  @Test
+  @DisplayName("getPublicProfileStats_시도0이면_avgSolveRate_null")
+  void getPublicProfileStats_noAttempts_avgSolveRateIsNull() {
+    given(quizRepository.aggregateByUserIdAndVisibility(eq(1L), eq(QuizVisibility.PUBLIC)))
+        .willReturn(stubAggregateRow(2, 0, 0, 0, 0));
+    given(quizAttemptRepository.countByUserIdAndQuizVisibility(eq(1L), eq(QuizVisibility.PUBLIC)))
+        .willReturn(0L);
+    given(quizAttemptRepository.avgSolveRateOfByQuizVisibility(eq(1L), eq(QuizVisibility.PUBLIC)))
+        .willReturn(null);
+
+    com.ongodmatchu.domain.quiz.dto.PublicProfileStats stats =
+        quizService.getPublicProfileStats(1L);
+
+    assertThat(stats.quizCount()).isEqualTo(2L);
+    assertThat(stats.solvedCount()).isZero();
+    assertThat(stats.avgSolveRate()).isNull();
+  }
+
   // ============ getMyQuizList ============
 
   @Test
