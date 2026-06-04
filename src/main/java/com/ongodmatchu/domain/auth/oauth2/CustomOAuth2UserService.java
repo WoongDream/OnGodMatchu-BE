@@ -29,10 +29,15 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
     String registrationId = request.getClientRegistration().getRegistrationId();
     OAuth2UserInfo userInfo = resolveUserInfo(registrationId, oAuth2User.getAttributes());
 
+    // email 이 가입의 유일한 키이므로(닉네임은 랜덤 생성) 누락 시 명확히 실패시킨다.
+    // 이 예외는 OAuth2AuthenticationFailureHandler 가 받아 FE 로그인 페이지로 리다이렉트한다.
+    String email = userInfo.getEmail();
+    if (email == null || email.isBlank()) {
+      throw new OAuth2AuthenticationException("이메일 제공에 동의해야 로그인할 수 있습니다.");
+    }
+
     User user =
-        userRepository
-            .findByEmail(userInfo.getEmail())
-            .orElseGet(() -> registerUser(userInfo, registrationId));
+        userRepository.findByEmail(email).orElseGet(() -> registerUser(userInfo, registrationId));
 
     return new CustomUserDetails(user);
   }
