@@ -15,7 +15,7 @@
 | Framework | Spring Boot 3.5 |
 | ORM | Spring Data JPA + QueryDSL |
 | Security | Spring Security + JWT |
-| OAuth2 | Google / Naver / Kakao |
+| OAuth2 | Google / Naver |
 | Database | PostgreSQL |
 | Cache | Redis |
 | Storage | AWS S3 |
@@ -40,7 +40,7 @@ POST /api/auth/verify-email  → 이메일 인증
 POST /api/auth/login         → 로그인
 POST /api/auth/refresh       → 토큰 재발급
 POST /api/auth/logout        → 로그아웃
-GET  /oauth2/authorization/* → 소셜 로그인 (Google / Naver / Kakao)
+GET  /oauth2/authorization/* → 소셜 로그인 (Google / Naver)
 
 POST  /api/upload/presigned  → S3 PUT presigned URL 발급 (10분)
 GET   /api/upload/signed     → S3 GET signed URL 발급 (1시간)
@@ -90,8 +90,6 @@ src/main/java/com/ongodmatchu/
 | `GOOGLE_CLIENT_SECRET` | Google OAuth2 클라이언트 Secret |
 | `NAVER_CLIENT_ID` | Naver OAuth2 클라이언트 ID |
 | `NAVER_CLIENT_SECRET` | Naver OAuth2 클라이언트 Secret |
-| `KAKAO_CLIENT_ID` | Kakao OAuth2 클라이언트 ID |
-| `KAKAO_CLIENT_SECRET` | Kakao OAuth2 클라이언트 Secret |
 | `AWS_ACCESS_KEY` | AWS IAM Access Key |
 | `AWS_SECRET_KEY` | AWS IAM Secret Key |
 | `AWS_S3_BUCKET` | S3 버킷 이름 |

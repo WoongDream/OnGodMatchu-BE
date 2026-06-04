@@ -106,8 +106,6 @@ jobs:
           GOOGLE_CLIENT_SECRET=__GOOGLE_CLIENT_SECRET__
           NAVER_CLIENT_ID=__NAVER_CLIENT_ID__
           NAVER_CLIENT_SECRET=__NAVER_CLIENT_SECRET__
-          KAKAO_CLIENT_ID=__KAKAO_CLIENT_ID__
-          KAKAO_CLIENT_SECRET=__KAKAO_CLIENT_SECRET__
           ENV_EOF
           sudo chmod 600 /opt/ongodmatchu/.env
           
@@ -151,8 +149,6 @@ jobs:
           sed -i "s|__GOOGLE_CLIENT_SECRET__|${{ secrets.GOOGLE_CLIENT_SECRET }}|g" deploy.sh
           sed -i "s|__NAVER_CLIENT_ID__|${{ secrets.NAVER_CLIENT_ID }}|g" deploy.sh
           sed -i "s|__NAVER_CLIENT_SECRET__|${{ secrets.NAVER_CLIENT_SECRET }}|g" deploy.sh
-          sed -i "s|__KAKAO_CLIENT_ID__|${{ secrets.KAKAO_CLIENT_ID }}|g" deploy.sh
-          sed -i "s|__KAKAO_CLIENT_SECRET__|${{ secrets.KAKAO_CLIENT_SECRET }}|g" deploy.sh
 
       - name: Send command to EC2 via SSM
         run: |

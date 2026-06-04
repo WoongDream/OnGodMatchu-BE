@@ -47,7 +47,6 @@ public class CustomOAuth2UserService extends DefaultOAuth2UserService {
     return switch (registrationId) {
       case "google" -> new GoogleOAuth2UserInfo(attributes);
       case "naver" -> new NaverOAuth2UserInfo(attributes);
-      case "kakao" -> new KakaoOAuth2UserInfo(attributes);
       default -> throw new OAuth2AuthenticationException("지원하지 않는 소셜 로그인: " + registrationId);
     };
   }

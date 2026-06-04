@@ -73,7 +73,6 @@ EC2
 | `MAIL_PASSWORD` | Gmail 앱 비밀번호 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google OAuth |
 | `NAVER_CLIENT_ID` / `NAVER_CLIENT_SECRET` | Naver OAuth |
-| `KAKAO_CLIENT_ID` / `KAKAO_CLIENT_SECRET` | Kakao OAuth |
 | `AWS_ACCESS_KEY` / `AWS_SECRET_KEY` | 운영용 IAM (S3 접근) |
 | `AWS_S3_BUCKET` | S3 버킷 이름 |
 | `CLAUDE_API_KEY` | Anthropic Claude API Key |
