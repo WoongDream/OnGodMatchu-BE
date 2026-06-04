@@ -26,7 +26,10 @@ public record UserResponse(
     long activeDays,
     boolean isProfilePublic,
     String provider,
-    boolean needsTermsAgreement) {
+    boolean needsTermsAgreement,
+    @Schema(description = "사용자 역할 — USER/ADMIN/OWNER") String role,
+    @Schema(description = "파생 상태 — ACTIVE/SUSPENDED/WITHDRAWN") String status,
+    @Schema(description = "정지 만료 시각. 정지 아니면 null", nullable = true) OffsetDateTime suspendedUntil) {
 
   /** 외부 뷰어/가입 직후 등 비-소유자 컨텍스트 — 원본/transform 미노출 (크롭으로 가린 영역 보호). */
   public static UserResponse from(User user, String profileImageUrl, long activeDays) {
@@ -65,6 +68,9 @@ public record UserResponse(
         activeDays,
         user.isProfilePublic(),
         user.getProvider().name(),
-        TermsPolicy.needsAgreement(user.getTermsVersion(), user.getPrivacyVersion()));
+        TermsPolicy.needsAgreement(user.getTermsVersion(), user.getPrivacyVersion()),
+        user.getRole().name(),
+        user.getStatus().name(),
+        TimeFormat.toResponse(user.getSuspendedUntil()));
   }
 }

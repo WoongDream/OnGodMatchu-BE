@@ -117,7 +117,10 @@ class UserControllerTest {
             100L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
   }
 
   @AfterEach
@@ -163,7 +166,10 @@ class UserControllerTest {
             100L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
     given(userService.getMe(1L)).willReturn(withTransform);
 
     mockMvc
@@ -248,7 +254,10 @@ class UserControllerTest {
             10L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
     given(userService.getProfile(eq(publicId), eq(null))).willReturn(anonResponse);
 
     // SecurityContext 비워서 비로그인 시뮬레이션
@@ -340,7 +349,10 @@ class UserControllerTest {
             100L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
     given(userService.updateMe(eq(1L), any(UserUpdateRequest.class))).willReturn(updated);
 
     mockMvc
@@ -674,7 +686,10 @@ class UserControllerTest {
             100L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
     given(userService.deleteProfileImage(1L)).willReturn(responseAfterDelete);
 
     mockMvc

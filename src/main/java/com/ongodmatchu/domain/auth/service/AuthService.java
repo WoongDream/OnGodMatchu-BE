@@ -159,8 +159,8 @@ public class AuthService {
             .findByEmail(request.email())
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-    if (user.isSystem() || !user.isActive()) {
-      // 시스템 계정/탈퇴 계정은 로그인 차단 — 존재 자체를 노출하지 않도록 USER_NOT_FOUND 로 매핑.
+    if (!user.isActive()) {
+      // 탈퇴 계정은 로그인 차단 — 존재 자체를 노출하지 않도록 USER_NOT_FOUND 로 매핑.
       throw new BusinessException(ErrorCode.USER_NOT_FOUND);
     }
     if (user.getProvider() != AuthProvider.LOCAL) {
@@ -193,7 +193,7 @@ public class AuthService {
         userRepository
             .findById(refreshToken.getUserId())
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-    if (user.isSystem() || !user.isActive()) {
+    if (!user.isActive()) {
       refreshTokenRepository.delete(refreshToken);
       throw new BusinessException(ErrorCode.UNAUTHORIZED);
     }

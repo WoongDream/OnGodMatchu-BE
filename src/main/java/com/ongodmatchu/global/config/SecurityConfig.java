@@ -84,6 +84,10 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/stats/**")
                     .permitAll()
+                    .requestMatchers("/api/admin/notices/**")
+                    .hasRole("OWNER")
+                    .requestMatchers("/api/admin/**")
+                    .hasAnyRole("ADMIN", "OWNER")
                     .anyRequest()
                     .authenticated())
         .oauth2Login(

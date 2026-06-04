@@ -104,26 +104,24 @@ class CustomUserDetailsServiceTest {
   }
 
   @Test
-  @DisplayName("loadUserByUsername_시스템계정_UNAUTHORIZED예외")
-  void loadUserByUsername_systemAccount_throwsUnauthorized() {
+  @DisplayName("loadUserByUsername_시스템계정_정상반환(OWNER 승격)")
+  void loadUserByUsername_systemAccount_returnsUserDetails() {
     User systemUser = buildUser(true, true);
     given(userRepository.findByEmail("user@example.com")).willReturn(Optional.of(systemUser));
 
-    assertThatThrownBy(() -> customUserDetailsService.loadUserByUsername("user@example.com"))
-        .isInstanceOf(BusinessException.class)
-        .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.UNAUTHORIZED);
+    UserDetails result = customUserDetailsService.loadUserByUsername("user@example.com");
+
+    assertThat(result).isInstanceOf(CustomUserDetails.class);
   }
 
   @Test
-  @DisplayName("loadUserById_시스템계정_UNAUTHORIZED예외")
-  void loadUserById_systemAccount_throwsUnauthorized() {
+  @DisplayName("loadUserById_시스템계정_정상반환(OWNER 승격)")
+  void loadUserById_systemAccount_returnsUserDetails() {
     User systemUser = buildUser(true, true);
     given(userRepository.findById(1L)).willReturn(Optional.of(systemUser));
 
-    assertThatThrownBy(() -> customUserDetailsService.loadUserById(1L))
-        .isInstanceOf(BusinessException.class)
-        .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.UNAUTHORIZED);
+    UserDetails result = customUserDetailsService.loadUserById(1L);
+
+    assertThat(result).isInstanceOf(CustomUserDetails.class);
   }
 }

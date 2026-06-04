@@ -58,6 +58,10 @@ app:
   frontend-url: ${FRONTEND_URL:http://localhost:5173}
   profile:
     default-image-url: ${PROFILE_DEFAULT_IMAGE_URL:https://ongodmatchu-static.s3.ap-northeast-2.amazonaws.com/profile-images/default.png}
+  owner:
+    # OWNER(최상위 관리자) 부트스트랩 — 미주입 시 비번 설정 skip (시스템 계정은 로그인 불가 유지)
+    email: ${OWNER_EMAIL:}
+    password: ${OWNER_PASSWORD:}
 
 aws:
   access-key: ${AWS_ACCESS_KEY}

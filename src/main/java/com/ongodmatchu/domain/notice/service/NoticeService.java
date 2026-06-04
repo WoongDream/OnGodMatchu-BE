@@ -1,54 +1,45 @@
 package com.ongodmatchu.domain.notice.service;
 
-import com.ongodmatchu.domain.notice.document.NoticeDocument;
 import com.ongodmatchu.domain.notice.dto.NoticeDetailResponse;
 import com.ongodmatchu.domain.notice.dto.NoticeListItemResponse;
-import com.ongodmatchu.domain.notice.loader.NoticeMarkdownLoader;
+import com.ongodmatchu.domain.notice.entity.Notice;
+import com.ongodmatchu.domain.notice.entity.NoticeStatus;
+import com.ongodmatchu.domain.notice.repository.NoticeRepository;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
-import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
+/** 공개 공지 조회 — 게시된 공지만 노출. 고정 우선 + 최신 게시순. 상세 조회 시 조회수 증가. */
 @Service
 @RequiredArgsConstructor
 public class NoticeService {
 
   private static final int MAX_PAGE_SIZE = 50;
-  private static final int DEFAULT_PAGE_SIZE = 20;
 
-  private final NoticeMarkdownLoader loader;
+  private final NoticeRepository noticeRepository;
 
+  @Transactional(readOnly = true)
   public Page<NoticeListItemResponse> getAnnouncements(Pageable pageable) {
-    int size = effectiveSize(pageable.getPageSize());
-    int page = Math.max(pageable.getPageNumber(), 0);
-
-    List<NoticeDocument> all = loader.findAllAnnouncements();
-    int total = all.size();
-    int from = Math.min(page * size, total);
-    int to = Math.min(from + size, total);
-
-    List<NoticeListItemResponse> content =
-        all.subList(from, to).stream().map(NoticeListItemResponse::from).toList();
-
-    return new PageImpl<>(content, PageRequest.of(page, size), total);
+    Pageable capped =
+        PageRequest.of(pageable.getPageNumber(), Math.min(pageable.getPageSize(), MAX_PAGE_SIZE));
+    return noticeRepository
+        .findByStatusOrderByPinnedDescPublishedAtDesc(NoticeStatus.PUBLISHED, capped)
+        .map(NoticeListItemResponse::from);
   }
 
-  public NoticeDetailResponse getAnnouncementDetail(String slug) {
-    return loader
-        .findAnnouncementBySlug(slug)
-        .map(NoticeDetailResponse::from)
-        .orElseThrow(() -> new BusinessException(ErrorCode.NOTICE_NOT_FOUND));
-  }
-
-  private static int effectiveSize(int requested) {
-    if (requested <= 0) {
-      return DEFAULT_PAGE_SIZE;
-    }
-    return Math.min(requested, MAX_PAGE_SIZE);
+  @Transactional
+  public NoticeDetailResponse getAnnouncementDetail(Long id) {
+    Notice notice =
+        noticeRepository
+            .findById(id)
+            .filter(Notice::isPublished)
+            .orElseThrow(() -> new BusinessException(ErrorCode.NOTICE_NOT_FOUND));
+    notice.increaseViewCount();
+    return NoticeDetailResponse.from(notice);
   }
 }

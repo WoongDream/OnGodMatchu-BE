@@ -34,6 +34,11 @@ public enum ErrorCode {
       HttpStatus.BAD_REQUEST, "INVALID_WITHDRAWAL_CONFIRMATION", "탈퇴 확인 문구가 올바르지 않습니다."),
   TERMS_AGREEMENT_REQUIRED(HttpStatus.BAD_REQUEST, "TERMS_AGREEMENT_REQUIRED", "필수 약관에 동의해야 합니다."),
   TERMS_AGREEMENT_OUTDATED(HttpStatus.FORBIDDEN, "TERMS_AGREEMENT_OUTDATED", "약관 동의가 필요합니다."),
+  ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "ACCOUNT_SUSPENDED", "정지된 계정은 해당 작업을 수행할 수 없습니다."),
+
+  // Admin / RBAC
+  ADMIN_FORBIDDEN(HttpStatus.FORBIDDEN, "ADMIN_FORBIDDEN", "해당 관리 작업에 대한 권한이 없습니다."),
+  ADMIN_TARGET_INVALID(HttpStatus.BAD_REQUEST, "ADMIN_TARGET_INVALID", "관리 대상이 올바르지 않습니다."),
 
   // Email verification
   INVALID_VERIFICATION_CODE(

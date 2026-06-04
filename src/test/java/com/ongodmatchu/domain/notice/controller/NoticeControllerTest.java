@@ -1,9 +1,9 @@
 package com.ongodmatchu.domain.notice.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -12,13 +12,12 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.notice.dto.NoticeDetailResponse;
 import com.ongodmatchu.domain.notice.dto.NoticeListItemResponse;
 import com.ongodmatchu.domain.notice.service.NoticeService;
-import com.ongodmatchu.global.exception.BusinessException;
-import com.ongodmatchu.global.exception.ErrorCode;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -34,24 +33,24 @@ import org.springframework.test.web.servlet.MockMvc;
 class NoticeControllerTest {
 
   @Autowired private MockMvc mockMvc;
-
-  @SuppressWarnings("unused")
-  @Autowired
-  private ObjectMapper objectMapper;
+  @Autowired private ObjectMapper objectMapper;
 
   @MockitoBean private NoticeService noticeService;
   @MockitoBean private JpaMetamodelMappingContext jpaMetamodelMappingContext;
 
-  private static final OffsetDateTime SAMPLE_PUBLISHED_AT =
-      OffsetDateTime.of(2026, 5, 27, 0, 0, 0, 0, ZoneOffset.of("+09:00"));
-
   // ============ GET /api/announcements ============
 
   @Test
-  @DisplayName("getAnnouncements_정상요청_200_slug기반_NoticeListItemResponse")
-  void getAnnouncements_validRequest_returns200() throws Exception {
+  @DisplayName("getAnnouncements_정상_200_Page반환_서비스위임")
+  void getAnnouncements_returns200WithPage() throws Exception {
     NoticeListItemResponse item =
-        new NoticeListItemResponse("service-open", "공지사항 제목", SAMPLE_PUBLISHED_AT);
+        new NoticeListItemResponse(
+            1L,
+            "공지 제목",
+            true,
+            OffsetDateTime.of(2025, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            OffsetDateTime.of(2025, 1, 2, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            42L);
     Page<NoticeListItemResponse> page = new PageImpl<>(List.of(item));
     given(noticeService.getAnnouncements(any(Pageable.class))).willReturn(page);
 
@@ -59,57 +58,70 @@ class NoticeControllerTest {
         .perform(get("/api/announcements"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.content[0].slug").value("service-open"))
-        .andExpect(jsonPath("$.data.content[0].title").value("공지사항 제목"))
-        .andExpect(jsonPath("$.data.content[0].publishedAt").exists());
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.content[0].id").value(1))
+        .andExpect(jsonPath("$.data.content[0].title").value("공지 제목"))
+        .andExpect(jsonPath("$.data.content[0].pinned").value(true))
+        .andExpect(jsonPath("$.data.content[0].viewCount").value(42))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
 
-    verify(noticeService).getAnnouncements(any(Pageable.class));
+    org.mockito.Mockito.verify(noticeService).getAnnouncements(any(Pageable.class));
   }
 
   @Test
-  @DisplayName("getAnnouncements_빈페이지_200_빈배열반환")
-  void getAnnouncements_emptyPage_returns200WithEmptyContent() throws Exception {
-    given(noticeService.getAnnouncements(any(Pageable.class))).willReturn(Page.empty());
+  @DisplayName("getAnnouncements_파라미터없음_기본size20으로_위임")
+  void getAnnouncements_noParam_passesDefaultSize20() throws Exception {
+    given(noticeService.getAnnouncements(any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc.perform(get("/api/announcements")).andExpect(status().isOk());
+
+    ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+    org.mockito.Mockito.verify(noticeService).getAnnouncements(captor.capture());
+    assertThat(captor.getValue().getPageSize()).isEqualTo(20);
+  }
+
+  @Test
+  @DisplayName("getAnnouncements_빈목록_200_빈페이지반환")
+  void getAnnouncements_empty_returnsEmptyPage() throws Exception {
+    given(noticeService.getAnnouncements(any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
 
     mockMvc
         .perform(get("/api/announcements"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.content").isArray())
-        .andExpect(jsonPath("$.data.content").isEmpty());
+        .andExpect(jsonPath("$.data.totalElements").value(0));
   }
 
-  // ============ GET /api/announcements/{slug} ============
+  // ============ GET /api/announcements/{id} ============
 
   @Test
-  @DisplayName("getAnnouncementDetail_정상요청_200_NoticeDetailResponse반환")
-  void getAnnouncementDetail_validRequest_returns200WithNoticeDetail() throws Exception {
+  @DisplayName("getAnnouncementDetail_정상_200_상세필드노출_id위임")
+  void getAnnouncementDetail_returns200WithDetailFields() throws Exception {
     NoticeDetailResponse detail =
-        new NoticeDetailResponse("service-open", "공지사항 제목", "## 본문", SAMPLE_PUBLISHED_AT);
-    given(noticeService.getAnnouncementDetail(eq("service-open"))).willReturn(detail);
+        new NoticeDetailResponse(
+            7L,
+            "상세 제목",
+            "본문 내용입니다.",
+            false,
+            OffsetDateTime.of(2025, 3, 10, 9, 0, 0, 0, ZoneOffset.of("+09:00")),
+            OffsetDateTime.of(2025, 3, 11, 9, 0, 0, 0, ZoneOffset.of("+09:00")),
+            100L);
+    given(noticeService.getAnnouncementDetail(eq(7L))).willReturn(detail);
 
     mockMvc
-        .perform(get("/api/announcements/service-open"))
+        .perform(get("/api/announcements/{id}", 7L))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.slug").value("service-open"))
-        .andExpect(jsonPath("$.data.title").value("공지사항 제목"))
-        .andExpect(jsonPath("$.data.content").value("## 본문"))
-        .andExpect(jsonPath("$.data.publishedAt").exists());
+        .andExpect(jsonPath("$.data.id").value(7))
+        .andExpect(jsonPath("$.data.title").value("상세 제목"))
+        .andExpect(jsonPath("$.data.content").value("본문 내용입니다."))
+        .andExpect(jsonPath("$.data.pinned").value(false))
+        .andExpect(jsonPath("$.data.publishedAt").exists())
+        .andExpect(jsonPath("$.data.viewCount").value(100));
 
-    verify(noticeService).getAnnouncementDetail(eq("service-open"));
-  }
-
-  @Test
-  @DisplayName("getAnnouncementDetail_미존재_404_NOTICE_NOT_FOUND반환")
-  void getAnnouncementDetail_notFound_returns404() throws Exception {
-    given(noticeService.getAnnouncementDetail(eq("missing")))
-        .willThrow(new BusinessException(ErrorCode.NOTICE_NOT_FOUND));
-
-    mockMvc
-        .perform(get("/api/announcements/missing"))
-        .andExpect(status().isNotFound())
-        .andExpect(jsonPath("$.success").value(false))
-        .andExpect(jsonPath("$.error.code").value("NOTICE_NOT_FOUND"));
+    org.mockito.Mockito.verify(noticeService).getAnnouncementDetail(eq(7L));
   }
 }

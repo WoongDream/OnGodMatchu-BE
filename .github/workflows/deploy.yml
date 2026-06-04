@@ -106,6 +106,8 @@ jobs:
           GOOGLE_CLIENT_SECRET=__GOOGLE_CLIENT_SECRET__
           NAVER_CLIENT_ID=__NAVER_CLIENT_ID__
           NAVER_CLIENT_SECRET=__NAVER_CLIENT_SECRET__
+          OWNER_EMAIL=__OWNER_EMAIL__
+          OWNER_PASSWORD=__OWNER_PASSWORD__
           ENV_EOF
           sudo chmod 600 /opt/ongodmatchu/.env
           
@@ -149,6 +151,8 @@ jobs:
           sed -i "s|__GOOGLE_CLIENT_SECRET__|${{ secrets.GOOGLE_CLIENT_SECRET }}|g" deploy.sh
           sed -i "s|__NAVER_CLIENT_ID__|${{ secrets.NAVER_CLIENT_ID }}|g" deploy.sh
           sed -i "s|__NAVER_CLIENT_SECRET__|${{ secrets.NAVER_CLIENT_SECRET }}|g" deploy.sh
+          sed -i "s|__OWNER_EMAIL__|${{ secrets.OWNER_EMAIL }}|g" deploy.sh
+          sed -i "s|__OWNER_PASSWORD__|${{ secrets.OWNER_PASSWORD }}|g" deploy.sh
 
       - name: Send command to EC2 via SSM
         run: |

@@ -417,8 +417,10 @@ class AuthServiceTest {
   }
 
   @Test
-  @DisplayName("로그인_시스템계정_USER_NOT_FOUND마스킹")
-  void login_systemAccount_throwsUserNotFound() {
+  @DisplayName("로그인_시스템계정_더이상_마스킹안함_비번검증단계_도달")
+  void login_systemAccount_noLongerMasked() {
+    // 시스템 계정은 OWNER 로 승격되어 로그인 차단 대상이 아니다. isSystem 만으로 USER_NOT_FOUND 마스킹되지 않고
+    // 비밀번호 검증 단계까지 진행된다 (여기선 비번 미설정이라 INVALID_PASSWORD).
     User systemUser =
         User.builder()
             .email("admin@system.local")
@@ -432,7 +434,7 @@ class AuthServiceTest {
     assertThatThrownBy(() -> authService.login(new LoginRequest("admin@system.local", "anything")))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+        .isEqualTo(ErrorCode.INVALID_PASSWORD);
   }
 
   @Test

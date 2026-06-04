@@ -85,6 +85,13 @@ public class User extends BaseTimeEntity {
   @Column(nullable = false)
   private boolean agreedToAge14 = false;
 
+  @Enumerated(EnumType.STRING)
+  @Column(nullable = false, length = 20)
+  private Role role = Role.USER;
+
+  /** 정지 만료 시각. null 또는 과거면 정지 아님 (요청 시점 lazy 판정, 별도 해제 배치 없음). */
+  private LocalDateTime suspendedUntil;
+
   @Builder
   private User(
       String email,
@@ -170,6 +177,37 @@ public class User extends BaseTimeEntity {
     this.profileImageTransform = null;
     this.isProfilePublic = false;
     this.isActive = false;
+    this.suspendedUntil = null;
     this.deletedAt = LocalDateTime.now();
+  }
+
+  /** 정지 기한이 살아있는지 (요청 시점 lazy 판정). */
+  public boolean isSuspended() {
+    return suspendedUntil != null && suspendedUntil.isAfter(LocalDateTime.now());
+  }
+
+  /** 파생 상태 — 탈퇴(비활성) > 정지 > 정상 순. */
+  public UserStatus getStatus() {
+    if (!isActive) {
+      return UserStatus.WITHDRAWN;
+    }
+    return isSuspended() ? UserStatus.SUSPENDED : UserStatus.ACTIVE;
+  }
+
+  public void changeRole(Role role) {
+    this.role = role;
+  }
+
+  public void suspendUntil(LocalDateTime until) {
+    this.suspendedUntil = until;
+  }
+
+  public void clearSuspension() {
+    this.suspendedUntil = null;
+  }
+
+  /** OWNER 부트스트랩 전용 — 환경변수로 주입된 운영 이메일로 교체. */
+  public void assignOwnerEmail(String email) {
+    this.email = email;
   }
 }
