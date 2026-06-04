@@ -46,4 +46,41 @@ public interface UserRepository extends JpaRepository<User, Long> {
       @Param("query") String query,
       @Param("now") LocalDateTime now,
       Pageable pageable);
+
+  /** 통계 카드 — 활성(비탈퇴) 유저 수, 시스템 제외. */
+  @Query("SELECT COUNT(u) FROM User u WHERE u.isSystem = false AND u.isActive = true")
+  long countActive();
+
+  /** 통계 카드 — 역할별 활성 유저 수, 시스템 제외. */
+  @Query(
+      "SELECT COUNT(u) FROM User u "
+          + "WHERE u.isSystem = false AND u.isActive = true AND u.role = :role")
+  long countActiveByRole(@Param("role") Role role);
+
+  /** 통계 카드 — 현재 정지 중(활성 + 정지기한 유효) 유저 수, 시스템 제외. */
+  @Query(
+      "SELECT COUNT(u) FROM User u "
+          + "WHERE u.isSystem = false AND u.isActive = true "
+          + "AND u.suspendedUntil IS NOT NULL AND u.suspendedUntil > :now")
+  long countSuspended(@Param("now") LocalDateTime now);
+
+  /** 월별 통계 — [start, end) 구간 신규 가입 수, 시스템 제외. */
+  @Query(
+      "SELECT COUNT(u) FROM User u "
+          + "WHERE u.isSystem = false AND u.createdAt >= :start AND u.createdAt < :end")
+  long countJoinedBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+  /** 월별 통계 — [start, end) 구간 이탈(탈퇴) 수, 시스템 제외. */
+  @Query(
+      "SELECT COUNT(u) FROM User u "
+          + "WHERE u.isSystem = false AND u.deletedAt IS NOT NULL "
+          + "AND u.deletedAt >= :start AND u.deletedAt < :end")
+  long countWithdrawnBetween(@Param("start") LocalDateTime start, @Param("end") LocalDateTime end);
+
+  /** 월별 통계 — asOf 시점의 누적 활성 유저 수 (그 전에 가입 + asOf 시점까지 미탈퇴), 시스템 제외. */
+  @Query(
+      "SELECT COUNT(u) FROM User u "
+          + "WHERE u.isSystem = false AND u.createdAt < :asOf "
+          + "AND (u.deletedAt IS NULL OR u.deletedAt >= :asOf)")
+  long countActiveAsOf(@Param("asOf") LocalDateTime asOf);
 }

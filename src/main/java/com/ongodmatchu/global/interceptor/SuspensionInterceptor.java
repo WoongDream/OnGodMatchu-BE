@@ -35,7 +35,8 @@ public class SuspensionInterceptor implements HandlerInterceptor {
           "POST /api/auth/refresh",
           "DELETE /api/users/me",
           "POST /api/users/me/withdrawal-code",
-          "POST /api/users/me/withdrawal-code/verify");
+          "POST /api/users/me/withdrawal-code/verify",
+          "POST /api/users/me/notifications/*/read");
 
   @Override
   public boolean preHandle(

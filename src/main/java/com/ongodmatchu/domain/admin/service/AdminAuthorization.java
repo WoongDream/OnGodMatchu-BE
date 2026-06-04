@@ -39,14 +39,22 @@ public final class AdminAuthorization {
     }
   }
 
-  /** 권한 변경(임명/해임/자가 사임) 가능 여부. 위반 시 예외. */
+  /**
+   * 권한 변경(임명/해임/자가 사임) 가능 여부. 위반 시 예외.
+   *
+   * <ul>
+   *   <li>OWNER 는 USER/ADMIN/OWNER 어느 역할로든 임명·해제 가능 (OWNER 부여·강등 포함)
+   *   <li>ADMIN 의 자가 사임(ADMIN→USER)만 예외적으로 허용, 그 외 ADMIN 의 역할 변경은 불가
+   *   <li>OWNER 본인의 역할 변경은 불가 (자기 강등으로 인한 권한 잠금 방지)
+   *   <li>시스템 계정·탈퇴 사용자는 대상 불가
+   * </ul>
+   */
   public static void assertCanChangeRole(User actor, User target, Role newRole) {
-    if (target.getStatus() == UserStatus.WITHDRAWN) {
+    if (target.isSystem()) {
       throw new BusinessException(ErrorCode.ADMIN_TARGET_INVALID);
     }
-    if (newRole == Role.OWNER || target.getRole() == Role.OWNER) {
-      // OWNER 임명·강등은 불가 (OWNER 는 시딩으로만 존재)
-      throw new BusinessException(ErrorCode.ADMIN_FORBIDDEN);
+    if (target.getStatus() == UserStatus.WITHDRAWN) {
+      throw new BusinessException(ErrorCode.ADMIN_TARGET_INVALID);
     }
     boolean selfResign =
         actor.getId().equals(target.getId())
@@ -55,8 +63,12 @@ public final class AdminAuthorization {
     if (selfResign) {
       return;
     }
+    // 자가 사임을 제외한 임명/해제(OWNER·ADMIN)는 OWNER 전용
     if (actor.getRole() != Role.OWNER) {
-      // 자가 사임을 제외한 임명/해임은 OWNER 전용
+      throw new BusinessException(ErrorCode.ADMIN_FORBIDDEN);
+    }
+    // OWNER 본인의 역할 변경은 불가
+    if (actor.getId().equals(target.getId())) {
       throw new BusinessException(ErrorCode.ADMIN_FORBIDDEN);
     }
   }
