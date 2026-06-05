@@ -169,24 +169,44 @@ class AdminAuthorizationTest {
     }
 
     @Test
-    @DisplayName("newRole == OWNER — ADMIN_FORBIDDEN")
-    void newRole_owner_forbidden() {
+    @DisplayName("시스템 계정 대상 — ADMIN_TARGET_INVALID")
+    void target_system_targetInvalid() {
       User actor = user(1L, Role.OWNER);
       User target = user(2L, Role.USER);
+      ReflectionTestUtils.setField(target, "isSystem", true);
 
-      assertThatThrownBy(() -> AdminAuthorization.assertCanChangeRole(actor, target, Role.OWNER))
+      assertThatThrownBy(() -> AdminAuthorization.assertCanChangeRole(actor, target, Role.USER))
           .isInstanceOf(BusinessException.class)
           .extracting(this::outer)
-          .isEqualTo(ErrorCode.ADMIN_FORBIDDEN);
+          .isEqualTo(ErrorCode.ADMIN_TARGET_INVALID);
     }
 
     @Test
-    @DisplayName("target.role == OWNER — ADMIN_FORBIDDEN")
-    void target_owner_forbidden() {
+    @DisplayName("OWNER 가 USER 를 OWNER 로 부여 — 통과 (OWNER 부여 허용)")
+    void owner_appointsOwner_ok() {
+      User actor = user(1L, Role.OWNER);
+      User target = user(2L, Role.USER);
+
+      assertThatCode(() -> AdminAuthorization.assertCanChangeRole(actor, target, Role.OWNER))
+          .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("OWNER 가 다른 OWNER 를 ADMIN 으로 강등 — 통과 (OWNER 강등 허용)")
+    void owner_demotesOwner_ok() {
       User actor = user(1L, Role.OWNER);
       User target = user(2L, Role.OWNER);
 
-      assertThatThrownBy(() -> AdminAuthorization.assertCanChangeRole(actor, target, Role.USER))
+      assertThatCode(() -> AdminAuthorization.assertCanChangeRole(actor, target, Role.ADMIN))
+          .doesNotThrowAnyException();
+    }
+
+    @Test
+    @DisplayName("OWNER 본인의 역할 변경 — ADMIN_FORBIDDEN (자기 강등 잠금 방지)")
+    void owner_self_forbidden() {
+      User actor = user(1L, Role.OWNER);
+
+      assertThatThrownBy(() -> AdminAuthorization.assertCanChangeRole(actor, actor, Role.USER))
           .isInstanceOf(BusinessException.class)
           .extracting(this::outer)
           .isEqualTo(ErrorCode.ADMIN_FORBIDDEN);

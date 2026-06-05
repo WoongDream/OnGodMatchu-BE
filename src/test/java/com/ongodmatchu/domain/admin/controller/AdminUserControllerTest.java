@@ -12,7 +12,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.ongodmatchu.domain.admin.dto.AdminUserDetailResponse;
+import com.ongodmatchu.domain.admin.dto.AdminUserHistoryResponse;
 import com.ongodmatchu.domain.admin.dto.AdminUserResponse;
+import com.ongodmatchu.domain.admin.dto.AdminUserSummaryResponse;
+import com.ongodmatchu.domain.admin.dto.AdminUserUpdateRequest;
+import com.ongodmatchu.domain.admin.dto.MonthlyUserStatResponse;
 import com.ongodmatchu.domain.admin.service.AdminUserService;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
@@ -82,6 +87,7 @@ class AdminUserControllerTest {
             UUID.fromString("00000000-0000-0000-0000-000000000002"),
             "대상유저",
             "target@example.com",
+            null,
             "USER",
             "ACTIVE",
             null,
@@ -233,6 +239,7 @@ class AdminUserControllerTest {
             targetPublicId,
             "대상유저",
             "target@example.com",
+            null,
             "ADMIN",
             "ACTIVE",
             null,
@@ -269,5 +276,173 @@ class AdminUserControllerTest {
         .andExpect(jsonPath("$.success").value(false));
 
     org.mockito.Mockito.verifyNoInteractions(adminUserService);
+  }
+
+  // ============ GET /api/admin/users/{publicId} ============
+
+  @Test
+  @DisplayName("getUserDetail_정상_200_상세필드반환")
+  void getUserDetail_returns200() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    AdminUserDetailResponse detail =
+        new AdminUserDetailResponse(
+            targetPublicId,
+            "대상유저",
+            "target@example.com",
+            "https://img/profile.svg",
+            "소개",
+            "USER",
+            "ACTIVE",
+            null,
+            "LOCAL",
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            7L,
+            82.5,
+            3L,
+            120L,
+            45L);
+    given(adminUserService.getUserDetail(targetPublicId)).willReturn(detail);
+
+    mockMvc
+        .perform(get("/api/admin/users/{publicId}", targetPublicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nickname").value("대상유저"))
+        .andExpect(jsonPath("$.data.solvedCount").value(7))
+        .andExpect(jsonPath("$.data.quizCount").value(3));
+
+    org.mockito.Mockito.verify(adminUserService).getUserDetail(targetPublicId);
+  }
+
+  // ============ PATCH /api/admin/users/{publicId} ============
+
+  @Test
+  @DisplayName("updateUser_정상_200_actorId/publicId_위임")
+  void updateUser_returns200AndDelegates() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    String body = "{\"role\":\"ADMIN\",\"resetBio\":true}";
+    given(
+            adminUserService.updateUser(
+                eq(1L), eq(targetPublicId), any(AdminUserUpdateRequest.class)))
+        .willReturn(sampleResponse);
+
+    mockMvc
+        .perform(
+            patch("/api/admin/users/{publicId}", targetPublicId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nickname").value("대상유저"));
+
+    org.mockito.Mockito.verify(adminUserService)
+        .updateUser(eq(1L), eq(targetPublicId), any(AdminUserUpdateRequest.class));
+  }
+
+  // ============ POST /api/admin/users/{publicId}/notifications ============
+
+  @Test
+  @DisplayName("sendNotification_정상_200_위임")
+  void sendNotification_returns200() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    String body = "{\"type\":\"INFO\",\"title\":\"제목\",\"content\":\"내용\"}";
+    given(adminUserService.sendNotification(eq(1L), eq(targetPublicId), any()))
+        .willReturn(sampleResponse);
+
+    mockMvc
+        .perform(
+            post("/api/admin/users/{publicId}/notifications", targetPublicId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    org.mockito.Mockito.verify(adminUserService)
+        .sendNotification(eq(1L), eq(targetPublicId), any());
+  }
+
+  @Test
+  @DisplayName("sendNotification_title누락_400_서비스미호출")
+  void sendNotification_missingTitle_returns400() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    String body = "{\"type\":\"INFO\",\"content\":\"내용\"}";
+
+    mockMvc
+        .perform(
+            post("/api/admin/users/{publicId}/notifications", targetPublicId)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false));
+
+    org.mockito.Mockito.verifyNoInteractions(adminUserService);
+  }
+
+  // ============ GET /api/admin/users/{publicId}/histories ============
+
+  @Test
+  @DisplayName("getHistories_정상_200_Page반환")
+  void getHistories_returns200() throws Exception {
+    UUID targetPublicId = UUID.fromString("00000000-0000-0000-0000-000000000002");
+    AdminUserHistoryResponse history =
+        new AdminUserHistoryResponse(
+            1L,
+            UUID.fromString("00000000-0000-0000-0000-000000000001"),
+            "운영자",
+            "OWNER",
+            "ROLE_CHANGE",
+            "역할 변경",
+            "USER → ADMIN",
+            null,
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
+    given(adminUserService.getHistories(eq(targetPublicId), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(history)));
+
+    mockMvc
+        .perform(get("/api/admin/users/{publicId}/histories", targetPublicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content[0].changeType").value("ROLE_CHANGE"))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+
+    org.mockito.Mockito.verify(adminUserService)
+        .getHistories(eq(targetPublicId), any(Pageable.class));
+  }
+
+  // ============ GET /api/admin/users/stats/summary ============
+
+  @Test
+  @DisplayName("getSummary_정상_200_통계반환")
+  void getSummary_returns200() throws Exception {
+    given(adminUserService.getSummary())
+        .willReturn(new AdminUserSummaryResponse(100L, 1L, 4L, 95L, 3L, 12L));
+
+    mockMvc
+        .perform(get("/api/admin/users/stats/summary"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.totalUsers").value(100))
+        .andExpect(jsonPath("$.data.suspendedCount").value(3))
+        .andExpect(jsonPath("$.data.newThisMonth").value(12));
+
+    org.mockito.Mockito.verify(adminUserService).getSummary();
+  }
+
+  // ============ GET /api/admin/users/stats/monthly ============
+
+  @Test
+  @DisplayName("getMonthlyStats_months지정_200_리스트반환_파라미터위임")
+  void getMonthlyStats_returns200AndDelegatesMonths() throws Exception {
+    given(adminUserService.getMonthlyStats(3))
+        .willReturn(List.of(new MonthlyUserStatResponse("2024-04", 90L, 5L, 1L)));
+
+    mockMvc
+        .perform(get("/api/admin/users/stats/monthly").param("months", "3"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data[0].yearMonth").value("2024-04"))
+        .andExpect(jsonPath("$.data[0].cumulative").value(90));
+
+    org.mockito.Mockito.verify(adminUserService).getMonthlyStats(3);
   }
 }
