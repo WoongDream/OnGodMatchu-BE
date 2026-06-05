@@ -3,6 +3,7 @@ package com.ongodmatchu.domain.notification.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.never;
@@ -21,9 +22,14 @@ import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -63,6 +69,41 @@ class UserNotificationServiceTest {
     return ((BusinessException) t).getErrorCode();
   }
 
+  /** PageRequest 는 size>=1 만 허용하므로, size<=0 분기 검증용 Pageable 을 직접 만든다. */
+  private Pageable zeroSizePageable() {
+    return new org.springframework.data.domain.AbstractPageRequest(0, 1) {
+      @Override
+      public int getPageSize() {
+        return 0;
+      }
+
+      @Override
+      public org.springframework.data.domain.Sort getSort() {
+        return org.springframework.data.domain.Sort.unsorted();
+      }
+
+      @Override
+      public Pageable next() {
+        return this;
+      }
+
+      @Override
+      public Pageable previous() {
+        return this;
+      }
+
+      @Override
+      public Pageable first() {
+        return this;
+      }
+
+      @Override
+      public Pageable withPage(int pageNumber) {
+        return this;
+      }
+    };
+  }
+
   // ============ getPending ============
 
   @Test
@@ -80,6 +121,63 @@ class UserNotificationServiceTest {
     assertThat(result.get(0).typeLabel()).isEqualTo("안내");
     assertThat(result.get(0).title()).isEqualTo("제목");
     assertThat(result.get(0).senderLabel()).isEqualTo("운영팀");
+  }
+
+  // ============ getReceived ============
+
+  @Test
+  @DisplayName("getReceived — 본인 받은 알림 페이지를 NotificationResponse 로 매핑")
+  void getReceived_mapsToResponsePage() {
+    User me = user(1L);
+    Pageable pageable = PageRequest.of(0, 20);
+    Page<UserNotification> page = new PageImpl<>(List.of(notification(10L, me)), pageable, 1);
+    given(userNotificationRepository.findByTargetUserIdOrderByCreatedAtDesc(eq(1L), any()))
+        .willReturn(page);
+
+    Page<NotificationResponse> result = userNotificationService.getReceived(1L, pageable);
+
+    assertThat(result.getTotalElements()).isEqualTo(1);
+    assertThat(result.getContent()).hasSize(1);
+    assertThat(result.getContent().get(0).id()).isEqualTo(10L);
+    assertThat(result.getContent().get(0).type()).isEqualTo("INFO");
+    assertThat(result.getContent().get(0).typeLabel()).isEqualTo("안내");
+    assertThat(result.getContent().get(0).title()).isEqualTo("제목");
+    assertThat(result.getContent().get(0).senderLabel()).isEqualTo("운영팀");
+    then(userNotificationRepository).should().findByTargetUserIdOrderByCreatedAtDesc(eq(1L), any());
+  }
+
+  @Test
+  @DisplayName("getReceived — size 100 요청이면 effective Pageable size 가 50 으로 cap")
+  void getReceived_capsSizeTo50() {
+    User me = user(1L);
+    given(userNotificationRepository.findByTargetUserIdOrderByCreatedAtDesc(eq(1L), any()))
+        .willReturn(new PageImpl<>(List.of(notification(10L, me))));
+
+    userNotificationService.getReceived(1L, PageRequest.of(2, 100));
+
+    ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+    then(userNotificationRepository)
+        .should()
+        .findByTargetUserIdOrderByCreatedAtDesc(eq(1L), captor.capture());
+    assertThat(captor.getValue().getPageSize()).isEqualTo(50);
+    assertThat(captor.getValue().getPageNumber()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("getReceived — size<=0 이면 기본 20 적용")
+  void getReceived_defaultsSizeWhenNonPositive() {
+    User me = user(1L);
+    given(userNotificationRepository.findByTargetUserIdOrderByCreatedAtDesc(eq(1L), any()))
+        .willReturn(new PageImpl<>(List.of(notification(10L, me))));
+
+    userNotificationService.getReceived(1L, zeroSizePageable());
+
+    ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+    then(userNotificationRepository)
+        .should()
+        .findByTargetUserIdOrderByCreatedAtDesc(eq(1L), captor.capture());
+    assertThat(captor.getValue().getPageSize()).isEqualTo(20);
+    assertThat(captor.getValue().getPageNumber()).isEqualTo(0);
   }
 
   // ============ markRead ============

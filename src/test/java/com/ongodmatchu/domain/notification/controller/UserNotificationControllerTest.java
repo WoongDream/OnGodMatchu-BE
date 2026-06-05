@@ -1,5 +1,6 @@
 package com.ongodmatchu.domain.notification.controller;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -24,6 +25,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.mapping.JpaMetamodelMappingContext;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.Authentication;
@@ -90,6 +94,34 @@ class UserNotificationControllerTest {
         .andExpect(jsonPath("$.data[0].senderLabel").value("운영팀"));
 
     org.mockito.Mockito.verify(userNotificationService).getPending(eq(1L));
+  }
+
+  @Test
+  @DisplayName("getReceived_정상_200_본인id로위임_페이지응답")
+  void getReceived_returns200() throws Exception {
+    NotificationResponse n =
+        new NotificationResponse(
+            10L,
+            "INFO",
+            "안내",
+            "제목",
+            "내용",
+            "운영팀",
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
+    Page<NotificationResponse> page = new PageImpl<>(List.of(n));
+    given(userNotificationService.getReceived(eq(1L), any(Pageable.class))).willReturn(page);
+
+    mockMvc
+        .perform(get("/api/users/me/notifications"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.content[0].id").value(10))
+        .andExpect(jsonPath("$.data.content[0].type").value("INFO"))
+        .andExpect(jsonPath("$.data.content[0].senderLabel").value("운영팀"))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+
+    org.mockito.Mockito.verify(userNotificationService).getReceived(eq(1L), any(Pageable.class));
   }
 
   @Test

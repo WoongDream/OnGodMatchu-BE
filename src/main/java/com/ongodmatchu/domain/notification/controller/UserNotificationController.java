@@ -8,6 +8,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,6 +33,17 @@ public class UserNotificationController {
       @AuthenticationPrincipal CustomUserDetails me) {
     return ResponseEntity.ok(
         ApiResponse.ok(userNotificationService.getPending(me.getUser().getId())));
+  }
+
+  @Operation(
+      summary = "받은 알림 목록",
+      description = "본인이 받은 모든 알림 (최신순). read 무관 전체 히스토리, size 최대 50 (기본 20).")
+  @GetMapping
+  public ResponseEntity<ApiResponse<Page<NotificationResponse>>> getReceived(
+      @AuthenticationPrincipal CustomUserDetails me,
+      @PageableDefault(size = 20) Pageable pageable) {
+    return ResponseEntity.ok(
+        ApiResponse.ok(userNotificationService.getReceived(me.getUser().getId(), pageable)));
   }
 
   @Operation(summary = "알림 확인 처리", description = "본인 알림만. 정지 사용자도 확인 가능.")
