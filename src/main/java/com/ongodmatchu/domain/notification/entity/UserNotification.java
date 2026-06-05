@@ -1,5 +1,6 @@
 package com.ongodmatchu.domain.notification.entity;
 
+import com.ongodmatchu.domain.inquiry.entity.Inquiry;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.global.entity.BaseTimeEntity;
 import jakarta.persistence.Column;
@@ -52,14 +53,25 @@ public class UserNotification extends BaseTimeEntity {
   /** 사용자가 modal 을 확인한 시각. null 이면 미확인. */
   private LocalDateTime readAt;
 
+  /** 문의 답변으로 발송된 알림이면 해당 문의에 연결(1문의:N알림). 문의 무관 알림은 null. */
+  @ManyToOne(fetch = FetchType.LAZY)
+  @JoinColumn(name = "related_inquiry_id")
+  private Inquiry relatedInquiry;
+
   @Builder
   private UserNotification(
-      User targetUser, User sender, NotificationType type, String title, String content) {
+      User targetUser,
+      User sender,
+      NotificationType type,
+      String title,
+      String content,
+      Inquiry relatedInquiry) {
     this.targetUser = targetUser;
     this.sender = sender;
     this.type = type;
     this.title = title;
     this.content = content;
+    this.relatedInquiry = relatedInquiry;
   }
 
   public boolean isRead() {

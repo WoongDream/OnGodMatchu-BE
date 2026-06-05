@@ -31,6 +31,7 @@ public class SuspensionInterceptor implements HandlerInterceptor {
           "POST /api/quizzes/*/share",
           "POST /api/quizzes/grade",
           "POST /api/visits",
+          "POST /api/inquiries",
           "POST /api/auth/logout",
           "POST /api/auth/refresh",
           "DELETE /api/users/me",
