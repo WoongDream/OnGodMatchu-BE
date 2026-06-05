@@ -16,7 +16,9 @@ public record AdminUserResponse(
     @Schema(description = "ACTIVE/SUSPENDED/WITHDRAWN") String status,
     @Schema(description = "정지 만료 시각. 정지 아니면 null", nullable = true) OffsetDateTime suspendedUntil,
     String provider,
-    OffsetDateTime createdAt) {
+    OffsetDateTime createdAt,
+    @Schema(description = "탈퇴 시각. 탈퇴 유저만 값, 그 외 null", nullable = true)
+        OffsetDateTime withdrawnAt) {
 
   /** 변경 액션 응답용 — 프로필 이미지 URL 미포함 (호출부가 목록을 재조회). */
   public static AdminUserResponse from(User user) {
@@ -33,6 +35,7 @@ public record AdminUserResponse(
         user.getStatus().name(),
         TimeFormat.toResponse(user.getSuspendedUntil()),
         user.getProvider().name(),
-        TimeFormat.toResponse(user.getCreatedAt()));
+        TimeFormat.toResponse(user.getCreatedAt()),
+        TimeFormat.toResponse(user.getDeletedAt()));
   }
 }

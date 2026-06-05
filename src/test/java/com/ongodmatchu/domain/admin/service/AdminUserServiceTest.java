@@ -375,6 +375,22 @@ class AdminUserServiceTest {
   }
 
   @Test
+  @DisplayName("getUserDetail — 탈퇴 유저는 status=WITHDRAWN, withdrawnAt 채워짐")
+  void getUserDetail_withdrawnUser_fillsWithdrawnAt() {
+    User target = user(2L, Role.USER);
+    target.withdraw("anon@deleted", "탈퇴회원");
+    given(userRepository.findByPublicId(target.getPublicId())).willReturn(Optional.of(target));
+    given(quizRepository.aggregateByUserId(2L)).willReturn(agg(0L, 0L, 0L));
+    given(quizAttemptRepository.countByUserId(2L)).willReturn(0L);
+    given(quizAttemptRepository.avgSolveRateOf(2L)).willReturn(null);
+
+    AdminUserDetailResponse result = adminUserService.getUserDetail(target.getPublicId());
+
+    assertThat(result.status()).isEqualTo("WITHDRAWN");
+    assertThat(result.withdrawnAt()).isNotNull();
+  }
+
+  @Test
   @DisplayName("getUserDetail — 시스템 계정은 USER_NOT_FOUND 로 마스킹")
   void getUserDetail_systemAccount_masked() {
     User target = user(2L, Role.USER);

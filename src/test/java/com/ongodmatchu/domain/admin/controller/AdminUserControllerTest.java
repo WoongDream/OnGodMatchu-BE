@@ -92,7 +92,8 @@ class AdminUserControllerTest {
             "ACTIVE",
             null,
             "LOCAL",
-            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            null);
   }
 
   @AfterEach
@@ -244,7 +245,8 @@ class AdminUserControllerTest {
             "ACTIVE",
             null,
             "LOCAL",
-            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
+            OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            null);
     given(adminUserService.changeRole(eq(1L), eq(targetPublicId), eq(Role.ADMIN)))
         .willReturn(promoted);
 
@@ -296,6 +298,7 @@ class AdminUserControllerTest {
             null,
             "LOCAL",
             OffsetDateTime.of(2024, 1, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
+            OffsetDateTime.of(2024, 6, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")),
             7L,
             82.5,
             3L,
@@ -308,6 +311,7 @@ class AdminUserControllerTest {
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.nickname").value("대상유저"))
+        .andExpect(jsonPath("$.data.withdrawnAt").exists())
         .andExpect(jsonPath("$.data.solvedCount").value(7))
         .andExpect(jsonPath("$.data.quizCount").value(3));
 

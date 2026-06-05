@@ -280,11 +280,15 @@ public class UserService {
 
     String anonymizedKey = "deleted_" + user.getPublicId();
     String previousImageKey = user.getProfileImageKey();
+    String previousOriginalImageKey = user.getOriginalProfileImageKey();
     user.withdraw(anonymizedKey + "@deleted.local", anonymizedKey);
 
     refreshTokenRepository.deleteByUserId(userId);
     if (previousImageKey != null) {
       s3Service.deleteQuietly(previousImageKey);
+    }
+    if (previousOriginalImageKey != null) {
+      s3Service.deleteQuietly(previousOriginalImageKey);
     }
   }
 

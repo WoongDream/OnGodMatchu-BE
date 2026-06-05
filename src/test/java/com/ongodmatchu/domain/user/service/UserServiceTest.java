@@ -1002,6 +1002,41 @@ class UserServiceTest {
   }
 
   @Test
+  @DisplayName("withdraw_원본프로필이미지키있음_크롭과원본_둘다_deleteQuietly호출")
+  void withdraw_withOriginalImage_deletesBothKeys() {
+    User user = buildLocalUser(1L, "유저");
+    String croppedKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    String originalKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/original.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", croppedKey);
+    ReflectionTestUtils.setField(user, "originalProfileImageKey", originalKey);
+    User admin = buildAdmin();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
+
+    userService.withdraw(1L, req(CODE, PHRASE, false));
+
+    assertThat(user.isActive()).isFalse();
+    then(s3Service).should().deleteQuietly(croppedKey);
+    then(s3Service).should().deleteQuietly(originalKey);
+  }
+
+  @Test
+  @DisplayName("withdraw_원본키없음_크롭만_deleteQuietly_원본키삭제미호출")
+  void withdraw_noOriginalImage_deletesOnlyCroppedKey() {
+    User user = buildLocalUser(1L, "유저");
+    String croppedKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", croppedKey);
+    User admin = buildAdmin();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
+
+    userService.withdraw(1L, req(CODE, PHRASE, false));
+
+    then(s3Service).should().deleteQuietly(croppedKey);
+    then(s3Service).should(org.mockito.Mockito.times(1)).deleteQuietly(anyString());
+  }
+
+  @Test
   @DisplayName("withdraw_deleteOwnQuizzes_true_본인퀴즈일괄삭제_관리자이전없음")
   void withdraw_deleteOwnQuizzes_callsDeleteAll() {
     User user = buildLocalUser(1L, "유저");
