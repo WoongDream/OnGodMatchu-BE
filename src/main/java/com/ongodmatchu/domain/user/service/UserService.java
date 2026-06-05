@@ -97,7 +97,8 @@ public class UserService {
 
   /**
    * 프로필 모달용 타인 프로필 요약. 식별 정보(닉네임/이미지/소개) + PUBLIC 기준 통계. 비공개 프로필도 통계는 노출 (FE 가 isProfilePublic 으로
-   * "프로필 보러가기" 버튼만 분기). 탈퇴(isActive=false)/시스템 계정은 {@link ErrorCode#USER_NOT_FOUND}.
+   * "프로필 보러가기" 버튼만 분기). 탈퇴(isActive=false)는 {@link ErrorCode#USER_NOT_FOUND}. 시스템('관리자') 계정은 모달 통계는
+   * 노출하되 isProfilePublic 을 false 로 강제해 "프로필 보러가기"/공개 프로필 페이지 진입은 차단한다.
    */
   @Transactional(readOnly = true)
   public PublicProfileSummaryResponse getProfileSummary(UUID publicId) {
@@ -105,7 +106,7 @@ public class UserService {
         userRepository
             .findByPublicId(publicId)
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-    if (!user.isActive() || user.isSystem()) {
+    if (!user.isActive()) {
       throw new BusinessException(ErrorCode.USER_NOT_FOUND);
     }
 
@@ -115,12 +116,13 @@ public class UserService {
         user.getNickname(),
         resolveImageUrl(user),
         user.getBio(),
-        user.isProfilePublic(),
+        user.isProfilePublic() && !user.isSystem(),
         stats.solvedCount(),
         stats.avgSolveRate(),
         stats.quizCount(),
         stats.totalPlayCount(),
-        stats.totalStarCount());
+        stats.totalStarCount(),
+        user.getRole().name());
   }
 
   @Transactional

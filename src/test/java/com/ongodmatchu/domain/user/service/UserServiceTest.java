@@ -26,6 +26,7 @@ import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.entity.AdminAccount;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
+import com.ongodmatchu.domain.user.entity.Role;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.entity.WithdrawalReasonRecord;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -341,6 +342,23 @@ class UserServiceTest {
     assertThat(result.quizCount()).isEqualTo(4L);
     assertThat(result.totalPlayCount()).isEqualTo(120L);
     assertThat(result.totalStarCount()).isEqualTo(30L);
+    assertThat(result.role()).isEqualTo("USER");
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_OWNER유저_role필드에name문자열매핑")
+  void getProfileSummary_ownerUser_mapsRoleName() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "오너유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.changeRole(Role.OWNER);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(quizService.getPublicProfileStats(1L))
+        .willReturn(new PublicProfileStats(1L, 10L, 5L, 2L, 90.0));
+
+    PublicProfileSummaryResponse result = userService.getProfileSummary(publicId);
+
+    assertThat(result.role()).isEqualTo("OWNER");
   }
 
   @Test
@@ -396,20 +414,25 @@ class UserServiceTest {
   }
 
   @Test
-  @DisplayName("getProfileSummary_시스템계정_isSystem_true_USER_NOT_FOUND예외")
-  void getProfileSummary_systemAccount_throwsUserNotFound() {
+  @DisplayName("getProfileSummary_시스템계정_통계노출하되isProfilePublic강제false")
+  void getProfileSummary_systemAccount_exposesStatsButForcesProfilePublicFalse() {
     UUID publicId = UUID.randomUUID();
     User user = buildLocalUser(1L, "시스템계정");
     ReflectionTestUtils.setField(user, "publicId", publicId);
     ReflectionTestUtils.setField(user, "isSystem", true);
+    user.updateProfilePublic(true);
     given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(quizService.getPublicProfileStats(1L))
+        .willReturn(new PublicProfileStats(2L, 50L, 10L, 3L, 60.0));
 
-    assertThatThrownBy(() -> userService.getProfileSummary(publicId))
-        .isInstanceOf(BusinessException.class)
-        .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+    PublicProfileSummaryResponse result = userService.getProfileSummary(publicId);
 
-    then(quizService).should(never()).getPublicProfileStats(any());
+    assertThat(result.isProfilePublic()).isFalse();
+    assertThat(result.solvedCount()).isEqualTo(3L);
+    assertThat(result.avgSolveRate()).isEqualTo(60.0);
+    assertThat(result.quizCount()).isEqualTo(2L);
+    assertThat(result.totalPlayCount()).isEqualTo(50L);
+    assertThat(result.totalStarCount()).isEqualTo(10L);
   }
 
   // ============ updateMe ============

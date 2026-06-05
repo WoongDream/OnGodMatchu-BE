@@ -18,4 +18,6 @@ public record PublicProfileSummaryResponse(
         Double avgSolveRate,
     @Schema(description = "만든 PUBLIC 퀴즈 개수") long quizCount,
     @Schema(description = "만든 PUBLIC 퀴즈 총 플레이 수") long totalPlayCount,
-    @Schema(description = "만든 PUBLIC 퀴즈 받은 스타 합계") long totalStarCount) {}
+    @Schema(description = "만든 PUBLIC 퀴즈 받은 스타 합계") long totalStarCount,
+    @Schema(description = "사용자 역할 — USER/ADMIN/OWNER. FE 가 OWNER/ADMIN 만 닉네임 위 배지로 표시")
+        String role) {}

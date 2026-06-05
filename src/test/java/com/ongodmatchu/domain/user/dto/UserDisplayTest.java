@@ -45,6 +45,25 @@ class UserDisplayTest {
   }
 
   @Test
+  @DisplayName("publicIdOf_활성유저_해당publicId반환")
+  void publicIdOf_active_returnsPublicId() {
+    User user = buildUser(true);
+    assertThat(UserDisplay.publicIdOf(user)).isEqualTo(user.getPublicId());
+  }
+
+  @Test
+  @DisplayName("publicIdOf_탈퇴유저_null반환")
+  void publicIdOf_inactive_returnsNull() {
+    assertThat(UserDisplay.publicIdOf(buildUser(false))).isNull();
+  }
+
+  @Test
+  @DisplayName("publicIdOf_null_null반환")
+  void publicIdOf_null_returnsNull() {
+    assertThat(UserDisplay.publicIdOf(null)).isNull();
+  }
+
+  @Test
   @DisplayName("profileImageUrlOf_활성유저_resolvedUrl그대로")
   void profileImageUrlOf_active_returnsResolvedUrl() {
     assertThat(UserDisplay.profileImageUrlOf(buildUser(true), "https://x/y.jpg"))

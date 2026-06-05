@@ -286,7 +286,8 @@ class UserControllerTest {
             75.5,
             4L,
             120L,
-            30L);
+            30L,
+            "OWNER");
     given(userService.getProfileSummary(eq(publicId))).willReturn(summary);
 
     mockMvc
@@ -299,7 +300,8 @@ class UserControllerTest {
         .andExpect(jsonPath("$.data.avgSolveRate").value(75.5))
         .andExpect(jsonPath("$.data.quizCount").value(4))
         .andExpect(jsonPath("$.data.totalPlayCount").value(120))
-        .andExpect(jsonPath("$.data.totalStarCount").value(30));
+        .andExpect(jsonPath("$.data.totalStarCount").value(30))
+        .andExpect(jsonPath("$.data.role").value("OWNER"));
   }
 
   @Test
@@ -317,7 +319,8 @@ class UserControllerTest {
             null,
             0L,
             0L,
-            0L);
+            0L,
+            "USER");
     given(userService.getProfileSummary(eq(publicId))).willReturn(summary);
 
     SecurityContextHolder.clearContext();
@@ -326,7 +329,8 @@ class UserControllerTest {
         .perform(get("/api/users/{publicId}/profile/summary", publicId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true))
-        .andExpect(jsonPath("$.data.isProfilePublic").value(false));
+        .andExpect(jsonPath("$.data.isProfilePublic").value(false))
+        .andExpect(jsonPath("$.data.role").value("USER"));
   }
 
   // ============ PATCH /api/users/me ============
