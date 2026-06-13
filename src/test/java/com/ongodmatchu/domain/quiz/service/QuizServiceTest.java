@@ -6,6 +6,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.BDDMockito.willDoNothing;
@@ -173,43 +174,100 @@ class QuizServiceTest {
   }
 
   @Test
-  @DisplayName("카테고리 없이 퀴즈 목록 조회 — PUBLIC 만, 비로그인은 isStarred=null")
-  void getQuizList_noCategory_anonymousViewer_isStarredNull() {
+  @DisplayName("카테고리·검색어 없이 퀴즈 목록 조회 — searchPublic(PUBLIC,null,null), 비로그인은 isStarred=null")
+  void getQuizList_noCategoryNoKeyword_anonymousViewer_isStarredNull() {
     User user = testUser();
     Quiz quiz = testQuiz(user);
-    given(quizRepository.findByVisibility(eq(QuizVisibility.PUBLIC), any(PageRequest.class)))
+    given(
+            quizRepository.searchPublic(
+                eq(QuizVisibility.PUBLIC), isNull(), isNull(), any(PageRequest.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
 
-    var result = quizService.getQuizList(null, null, PageRequest.of(0, 12));
+    var result = quizService.getQuizList(null, null, null, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).title()).isEqualTo("퀴즈 제목");
     assertThat(result.getContent().get(0).isStarred()).isNull();
     then(quizRepository)
         .should()
-        .findByVisibility(eq(QuizVisibility.PUBLIC), any(PageRequest.class));
+        .searchPublic(eq(QuizVisibility.PUBLIC), isNull(), isNull(), any(PageRequest.class));
     then(quizStarRepository).should(never()).findStarredQuizIds(any(), any());
   }
 
   @Test
-  @DisplayName("카테고리 필터로 퀴즈 목록 조회 — PUBLIC 만, 인증 시 isStarred 채움 (N+1 회피)")
-  void getQuizList_withCategory_authenticatedViewer_isStarredFilled() {
+  @DisplayName("카테고리 지정 시 정규화(trim) 후 searchPublic 에 visibility=PUBLIC 과 함께 전달")
+  void getQuizList_withCategory_normalizedAndPassedToSearchPublic() {
     User user = testUser();
     Quiz quiz = testQuiz(user);
-    given(
-            quizRepository.findByCategoryAndVisibility(
-                any(), eq(QuizVisibility.PUBLIC), any(PageRequest.class)))
+    given(quizRepository.searchPublic(any(), any(), any(), any(PageRequest.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    var result = quizService.getQuizList("  game  ", null, null, PageRequest.of(0, 12));
+
+    assertThat(result.getContent()).hasSize(1);
+    ArgumentCaptor<String> categoryCaptor = ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    then(quizRepository)
+        .should()
+        .searchPublic(
+            eq(QuizVisibility.PUBLIC),
+            categoryCaptor.capture(),
+            titleCaptor.capture(),
+            any(PageRequest.class));
+    assertThat(categoryCaptor.getValue()).isEqualTo("game");
+    assertThat(titleCaptor.getValue()).isNull();
+  }
+
+  @Test
+  @DisplayName("검색어(keyword) 지정 시 정규화(trim) 후 searchPublic title 인자로 전달")
+  void getQuizList_withKeyword_normalizedAndPassedAsTitle() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.searchPublic(any(), any(), any(), any(PageRequest.class)))
+        .willReturn(new PageImpl<>(List.of(quiz)));
+
+    var result = quizService.getQuizList(null, "  퀴즈  ", null, PageRequest.of(0, 12));
+
+    assertThat(result.getContent()).hasSize(1);
+    ArgumentCaptor<String> categoryCaptor = ArgumentCaptor.forClass(String.class);
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    then(quizRepository)
+        .should()
+        .searchPublic(
+            eq(QuizVisibility.PUBLIC),
+            categoryCaptor.capture(),
+            titleCaptor.capture(),
+            any(PageRequest.class));
+    assertThat(categoryCaptor.getValue()).isNull();
+    assertThat(titleCaptor.getValue()).isEqualTo("퀴즈");
+  }
+
+  @Test
+  @DisplayName("공백/빈 카테고리·검색어는 정규화로 null 처리되어 searchPublic 에 전달")
+  void getQuizList_blankCategoryAndKeyword_normalizedToNull() {
+    given(quizRepository.searchPublic(any(), any(), any(), any(PageRequest.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    quizService.getQuizList("   ", "", null, PageRequest.of(0, 12));
+
+    then(quizRepository)
+        .should()
+        .searchPublic(eq(QuizVisibility.PUBLIC), isNull(), isNull(), any(PageRequest.class));
+  }
+
+  @Test
+  @DisplayName("로그인 사용자가 스타 누른 경우 isStarred 채움 (N+1 회피)")
+  void getQuizList_authenticatedViewer_isStarredFilled() {
+    User user = testUser();
+    Quiz quiz = testQuiz(user);
+    given(quizRepository.searchPublic(any(), any(), any(), any(PageRequest.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
     given(quizStarRepository.findStarredQuizIds(eq(7L), eq(List.of(1L)))).willReturn(List.of(1L));
 
-    var result = quizService.getQuizList("game", 7L, PageRequest.of(0, 12));
+    var result = quizService.getQuizList("game", "퀴즈", 7L, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).hasSize(1);
-    assertThat(result.getContent().get(0).category()).isEqualTo("game");
     assertThat(result.getContent().get(0).isStarred()).isTrue();
-    then(quizRepository)
-        .should()
-        .findByCategoryAndVisibility(eq("game"), eq(QuizVisibility.PUBLIC), any(PageRequest.class));
     then(quizStarRepository).should(times(1)).findStarredQuizIds(eq(7L), eq(List.of(1L)));
   }
 
@@ -218,11 +276,11 @@ class QuizServiceTest {
   void getQuizList_authenticatedViewer_notStarred_isFalse() {
     User user = testUser();
     Quiz quiz = testQuiz(user);
-    given(quizRepository.findByVisibility(eq(QuizVisibility.PUBLIC), any(PageRequest.class)))
+    given(quizRepository.searchPublic(any(), any(), any(), any(PageRequest.class)))
         .willReturn(new PageImpl<>(List.of(quiz)));
     given(quizStarRepository.findStarredQuizIds(eq(7L), eq(List.of(1L)))).willReturn(List.of());
 
-    var result = quizService.getQuizList(null, 7L, PageRequest.of(0, 12));
+    var result = quizService.getQuizList(null, null, 7L, PageRequest.of(0, 12));
 
     assertThat(result.getContent().get(0).isStarred()).isFalse();
   }
@@ -230,10 +288,10 @@ class QuizServiceTest {
   @Test
   @DisplayName("퀴즈 목록 — 빈 페이지면 findStarredQuizIds 호출 없음")
   void getQuizList_emptyPage_skipsStarLookup() {
-    given(quizRepository.findByVisibility(eq(QuizVisibility.PUBLIC), any(PageRequest.class)))
+    given(quizRepository.searchPublic(any(), any(), any(), any(PageRequest.class)))
         .willReturn(new PageImpl<>(List.of()));
 
-    var result = quizService.getQuizList(null, 7L, PageRequest.of(0, 12));
+    var result = quizService.getQuizList(null, null, 7L, PageRequest.of(0, 12));
 
     assertThat(result.getContent()).isEmpty();
     then(quizStarRepository).should(never()).findStarredQuizIds(any(), any());

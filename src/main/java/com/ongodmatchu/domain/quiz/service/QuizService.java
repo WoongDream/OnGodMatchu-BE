@@ -52,7 +52,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -84,11 +83,11 @@ public class QuizService {
   }
 
   @Transactional(readOnly = true)
-  public Page<QuizResponse> getQuizList(String category, Long viewerUserId, Pageable pageable) {
+  public Page<QuizResponse> getQuizList(
+      String category, String keyword, Long viewerUserId, Pageable pageable) {
     Page<Quiz> page =
-        StringUtils.hasText(category)
-            ? quizRepository.findByCategoryAndVisibility(category, QuizVisibility.PUBLIC, pageable)
-            : quizRepository.findByVisibility(QuizVisibility.PUBLIC, pageable);
+        quizRepository.searchPublic(
+            QuizVisibility.PUBLIC, normalizeTitle(category), normalizeTitle(keyword), pageable);
 
     List<String> keys =
         page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();

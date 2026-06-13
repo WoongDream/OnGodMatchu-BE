@@ -12,10 +12,29 @@ import org.springframework.data.repository.query.Param;
 
 public interface QuizRepository extends JpaRepository<Quiz, Long> {
 
-  Page<Quiz> findByCategoryAndVisibility(
-      String category, QuizVisibility visibility, Pageable pageable);
-
-  Page<Quiz> findByVisibility(QuizVisibility visibility, Pageable pageable);
+  /**
+   * 메인 공개 목록 — visibility 한정 + 카테고리(옵션) + 제목 부분검색(옵션). 정렬은 Pageable 위임 (인기순 playCount,createdAt
+   * DESC / 최신순 createdAt DESC). category·title 모두 null 이면 전체 PUBLIC. null bind 시 PostgreSQL bytea
+   * 추론 오류를 CAST(... AS string) 으로 회피.
+   */
+  @Query(
+      value =
+          "SELECT q FROM Quiz q "
+              + "WHERE q.visibility = :visibility "
+              + "AND (CAST(:category AS string) IS NULL OR q.category = CAST(:category AS string)) "
+              + "AND (CAST(:title AS string) IS NULL "
+              + "OR LOWER(q.title) LIKE LOWER(CONCAT('%', CAST(:title AS string), '%')))",
+      countQuery =
+          "SELECT COUNT(q) FROM Quiz q "
+              + "WHERE q.visibility = :visibility "
+              + "AND (CAST(:category AS string) IS NULL OR q.category = CAST(:category AS string)) "
+              + "AND (CAST(:title AS string) IS NULL "
+              + "OR LOWER(q.title) LIKE LOWER(CONCAT('%', CAST(:title AS string), '%')))")
+  Page<Quiz> searchPublic(
+      @Param("visibility") QuizVisibility visibility,
+      @Param("category") String category,
+      @Param("title") String title,
+      Pageable pageable);
 
   Page<Quiz> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
