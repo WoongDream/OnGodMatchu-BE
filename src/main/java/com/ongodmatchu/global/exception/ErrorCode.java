@@ -17,6 +17,7 @@ public enum ErrorCode {
   EMAIL_ALREADY_EXISTS(HttpStatus.CONFLICT, "EMAIL_ALREADY_EXISTS", "이미 사용 중인 이메일입니다."),
   NICKNAME_ALREADY_EXISTS(HttpStatus.CONFLICT, "NICKNAME_ALREADY_EXISTS", "이미 사용 중인 닉네임입니다."),
   INVALID_NICKNAME_FORMAT(HttpStatus.BAD_REQUEST, "INVALID_NICKNAME_FORMAT", "닉네임 형식이 올바르지 않습니다."),
+  NICKNAME_FORBIDDEN(HttpStatus.BAD_REQUEST, "NICKNAME_FORBIDDEN", "사용할 수 없는 닉네임입니다."),
   INVALID_PASSWORD(HttpStatus.UNAUTHORIZED, "INVALID_PASSWORD", "비밀번호가 올바르지 않습니다."),
   EMAIL_NOT_VERIFIED(HttpStatus.FORBIDDEN, "EMAIL_NOT_VERIFIED", "이메일 인증이 필요합니다."),
   SOCIAL_USER_PASSWORD_LOGIN(
@@ -39,6 +40,12 @@ public enum ErrorCode {
   // Admin / RBAC
   ADMIN_FORBIDDEN(HttpStatus.FORBIDDEN, "ADMIN_FORBIDDEN", "해당 관리 작업에 대한 권한이 없습니다."),
   ADMIN_TARGET_INVALID(HttpStatus.BAD_REQUEST, "ADMIN_TARGET_INVALID", "관리 대상이 올바르지 않습니다."),
+
+  // Forbidden nickname (백오피스 차단 닉네임 관리)
+  FORBIDDEN_NICKNAME_NOT_FOUND(
+      HttpStatus.NOT_FOUND, "FORBIDDEN_NICKNAME_NOT_FOUND", "차단 닉네임 규칙을 찾을 수 없습니다."),
+  FORBIDDEN_NICKNAME_DUPLICATE(
+      HttpStatus.CONFLICT, "FORBIDDEN_NICKNAME_DUPLICATE", "이미 등록된 차단 닉네임 규칙입니다."),
 
   // Email verification
   INVALID_VERIFICATION_CODE(

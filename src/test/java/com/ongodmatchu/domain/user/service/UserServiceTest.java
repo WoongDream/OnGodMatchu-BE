@@ -73,6 +73,9 @@ class UserServiceTest {
   @Mock private WithdrawalReasonRepository withdrawalReasonRepository;
   @Mock private WithdrawalCodeService withdrawalCodeService;
 
+  @Mock
+  private com.ongodmatchu.domain.nickname.service.ForbiddenNicknameService forbiddenNicknameService;
+
   private static final String DEFAULT_IMAGE_URL = "https://cdn.example.com/default.png";
   private static final String VIEW_URL = "https://cdn.example.com/presigned-view-url";
 
@@ -449,6 +452,24 @@ class UserServiceTest {
 
     assertThat(result.nickname()).isEqualTo("새닉네임");
     then(nicknamePolicy).should().enforce("새닉네임");
+  }
+
+  @Test
+  @DisplayName("updateMe_차단닉네임_NICKNAME_FORBIDDEN예외_중복체크미도달")
+  void updateMe_forbiddenNickname_throws() {
+    User user = buildLocalUser(1L, "기존닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(nicknameNormalizer.normalize("관리자")).willReturn("관리자");
+    willThrow(new BusinessException(ErrorCode.NICKNAME_FORBIDDEN))
+        .given(forbiddenNicknameService)
+        .assertAllowed("관리자");
+
+    assertThatThrownBy(() -> userService.updateMe(1L, new UserUpdateRequest("관리자", null, null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NICKNAME_FORBIDDEN);
+
+    then(userRepository).should(never()).existsByNickname(anyString());
   }
 
   @Test

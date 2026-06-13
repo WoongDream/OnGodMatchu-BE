@@ -13,6 +13,7 @@ import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.auth.validation.TermsPolicy;
+import com.ongodmatchu.domain.nickname.service.ForbiddenNicknameService;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -47,6 +48,7 @@ public class AuthService {
   private final PasswordValidator passwordValidator;
   private final NicknameNormalizer nicknameNormalizer;
   private final NicknamePolicy nicknamePolicy;
+  private final ForbiddenNicknameService forbiddenNicknameService;
   private final VerificationCodeRateLimiter rateLimiter;
   private final ProfileImageInitializer profileImageInitializer;
   private final S3Service s3Service;
@@ -100,6 +102,7 @@ public class AuthService {
 
     String nickname = nicknameNormalizer.normalize(request.nickname());
     nicknamePolicy.enforce(nickname);
+    forbiddenNicknameService.assertAllowed(nickname);
     if (userRepository.existsByNickname(nickname)) {
       throw new BusinessException(ErrorCode.NICKNAME_ALREADY_EXISTS);
     }
@@ -144,6 +147,10 @@ public class AuthService {
     String nickname = nicknameNormalizer.normalize(rawNickname);
     if (!nicknamePolicy.isValid(nickname)) {
       return NicknameAvailabilityResponse.unavailable(NicknameAvailabilityResponse.REASON_FORMAT);
+    }
+    String blockedTerm = forbiddenNicknameService.findBlockedTerm(nickname);
+    if (blockedTerm != null) {
+      return NicknameAvailabilityResponse.forbidden(blockedTerm);
     }
     if (userRepository.existsByNickname(nickname)) {
       return NicknameAvailabilityResponse.unavailable(

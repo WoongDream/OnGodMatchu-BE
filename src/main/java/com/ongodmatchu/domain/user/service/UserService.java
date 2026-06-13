@@ -3,6 +3,7 @@ package com.ongodmatchu.domain.user.service;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.auth.validation.TermsPolicy;
+import com.ongodmatchu.domain.nickname.service.ForbiddenNicknameService;
 import com.ongodmatchu.domain.quiz.dto.PublicProfileStats;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
@@ -47,6 +48,7 @@ public class UserService {
   private final UserRepository userRepository;
   private final NicknameNormalizer nicknameNormalizer;
   private final NicknamePolicy nicknamePolicy;
+  private final ForbiddenNicknameService forbiddenNicknameService;
   private final BioPolicy bioPolicy;
   private final PasswordEncoder passwordEncoder;
   private final PasswordValidator passwordValidator;
@@ -132,6 +134,7 @@ public class UserService {
     if (request.nickname() != null) {
       String nickname = nicknameNormalizer.normalize(request.nickname());
       nicknamePolicy.enforce(nickname);
+      forbiddenNicknameService.assertAllowed(nickname);
       if (!user.getNickname().equals(nickname) && userRepository.existsByNickname(nickname)) {
         throw new BusinessException(ErrorCode.NICKNAME_ALREADY_EXISTS);
       }
