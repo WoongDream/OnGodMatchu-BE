@@ -15,15 +15,18 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
+import com.ongodmatchu.domain.quiz.dto.PublicProfileStats;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
+import com.ongodmatchu.domain.user.dto.PublicProfileSummaryResponse;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
 import com.ongodmatchu.domain.user.dto.WithdrawRequest;
 import com.ongodmatchu.domain.user.entity.AdminAccount;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
+import com.ongodmatchu.domain.user.entity.Role;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.entity.WithdrawalReasonRecord;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -69,6 +72,9 @@ class UserServiceTest {
   @Mock private QuizService quizService;
   @Mock private WithdrawalReasonRepository withdrawalReasonRepository;
   @Mock private WithdrawalCodeService withdrawalCodeService;
+
+  @Mock
+  private com.ongodmatchu.domain.nickname.service.ForbiddenNicknameService forbiddenNicknameService;
 
   private static final String DEFAULT_IMAGE_URL = "https://cdn.example.com/default.png";
   private static final String VIEW_URL = "https://cdn.example.com/presigned-view-url";
@@ -313,6 +319,125 @@ class UserServiceTest {
         .isEqualTo(ErrorCode.USER_NOT_FOUND);
   }
 
+  // ============ getProfileSummary ============
+
+  @Test
+  @DisplayName("getProfileSummary_공개프로필_식별정보와통계매핑_isProfilePublic_true")
+  void getProfileSummary_publicProfile_mapsIdentityAndStats() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.updateProfilePublic(true);
+    user.updateBio("안녕하세요");
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(quizService.getPublicProfileStats(1L))
+        .willReturn(new PublicProfileStats(4L, 120L, 30L, 8L, 75.5));
+
+    PublicProfileSummaryResponse result = userService.getProfileSummary(publicId);
+
+    assertThat(result.userId()).isEqualTo(publicId);
+    assertThat(result.nickname()).isEqualTo("공개유저");
+    assertThat(result.profileImageUrl()).isEqualTo(DEFAULT_IMAGE_URL);
+    assertThat(result.bio()).isEqualTo("안녕하세요");
+    assertThat(result.isProfilePublic()).isTrue();
+    assertThat(result.solvedCount()).isEqualTo(8L);
+    assertThat(result.avgSolveRate()).isEqualTo(75.5);
+    assertThat(result.quizCount()).isEqualTo(4L);
+    assertThat(result.totalPlayCount()).isEqualTo(120L);
+    assertThat(result.totalStarCount()).isEqualTo(30L);
+    assertThat(result.role()).isEqualTo("USER");
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_OWNER유저_role필드에name문자열매핑")
+  void getProfileSummary_ownerUser_mapsRoleName() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "오너유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.changeRole(Role.OWNER);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(quizService.getPublicProfileStats(1L))
+        .willReturn(new PublicProfileStats(1L, 10L, 5L, 2L, 90.0));
+
+    PublicProfileSummaryResponse result = userService.getProfileSummary(publicId);
+
+    assertThat(result.role()).isEqualTo("OWNER");
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_비공개프로필_통계는노출_isProfilePublic_false")
+  void getProfileSummary_privateProfile_stillExposesStats() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "비공개유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    user.updateProfilePublic(false);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(quizService.getPublicProfileStats(1L))
+        .willReturn(new PublicProfileStats(2L, 50L, 10L, 3L, 60.0));
+
+    PublicProfileSummaryResponse result = userService.getProfileSummary(publicId);
+
+    assertThat(result.isProfilePublic()).isFalse();
+    assertThat(result.solvedCount()).isEqualTo(3L);
+    assertThat(result.avgSolveRate()).isEqualTo(60.0);
+    assertThat(result.quizCount()).isEqualTo(2L);
+    assertThat(result.totalPlayCount()).isEqualTo(50L);
+    assertThat(result.totalStarCount()).isEqualTo(10L);
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_사용자미존재_USER_NOT_FOUND예외")
+  void getProfileSummary_userNotFound_throwsException() {
+    UUID unknownId = UUID.randomUUID();
+    given(userRepository.findByPublicId(unknownId)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> userService.getProfileSummary(unknownId))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+    then(quizService).should(never()).getPublicProfileStats(any());
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_탈퇴유저_isActive_false_USER_NOT_FOUND예외")
+  void getProfileSummary_withdrawnUser_throwsUserNotFound() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "탈퇴유저");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    ReflectionTestUtils.setField(user, "isActive", false);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+
+    assertThatThrownBy(() -> userService.getProfileSummary(publicId))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+    then(quizService).should(never()).getPublicProfileStats(any());
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_시스템계정_통계노출하되isProfilePublic강제false")
+  void getProfileSummary_systemAccount_exposesStatsButForcesProfilePublicFalse() {
+    UUID publicId = UUID.randomUUID();
+    User user = buildLocalUser(1L, "시스템계정");
+    ReflectionTestUtils.setField(user, "publicId", publicId);
+    ReflectionTestUtils.setField(user, "isSystem", true);
+    user.updateProfilePublic(true);
+    given(userRepository.findByPublicId(publicId)).willReturn(Optional.of(user));
+    given(quizService.getPublicProfileStats(1L))
+        .willReturn(new PublicProfileStats(2L, 50L, 10L, 3L, 60.0));
+
+    PublicProfileSummaryResponse result = userService.getProfileSummary(publicId);
+
+    assertThat(result.isProfilePublic()).isFalse();
+    assertThat(result.solvedCount()).isEqualTo(3L);
+    assertThat(result.avgSolveRate()).isEqualTo(60.0);
+    assertThat(result.quizCount()).isEqualTo(2L);
+    assertThat(result.totalPlayCount()).isEqualTo(50L);
+    assertThat(result.totalStarCount()).isEqualTo(10L);
+  }
+
   // ============ updateMe ============
 
   @Test
@@ -327,6 +452,24 @@ class UserServiceTest {
 
     assertThat(result.nickname()).isEqualTo("새닉네임");
     then(nicknamePolicy).should().enforce("새닉네임");
+  }
+
+  @Test
+  @DisplayName("updateMe_차단닉네임_NICKNAME_FORBIDDEN예외_중복체크미도달")
+  void updateMe_forbiddenNickname_throws() {
+    User user = buildLocalUser(1L, "기존닉네임");
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(nicknameNormalizer.normalize("관리자")).willReturn("관리자");
+    willThrow(new BusinessException(ErrorCode.NICKNAME_FORBIDDEN))
+        .given(forbiddenNicknameService)
+        .assertAllowed("관리자");
+
+    assertThatThrownBy(() -> userService.updateMe(1L, new UserUpdateRequest("관리자", null, null)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NICKNAME_FORBIDDEN);
+
+    then(userRepository).should(never()).existsByNickname(anyString());
   }
 
   @Test
@@ -877,6 +1020,41 @@ class UserServiceTest {
     then(quizService).should(never()).deleteAllByUserId(any());
     then(refreshTokenRepository).should().deleteByUserId(1L);
     then(s3Service).should().deleteQuietly("profile-images/uuid/photo.jpg");
+  }
+
+  @Test
+  @DisplayName("withdraw_원본프로필이미지키있음_크롭과원본_둘다_deleteQuietly호출")
+  void withdraw_withOriginalImage_deletesBothKeys() {
+    User user = buildLocalUser(1L, "유저");
+    String croppedKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    String originalKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/original.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", croppedKey);
+    ReflectionTestUtils.setField(user, "originalProfileImageKey", originalKey);
+    User admin = buildAdmin();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
+
+    userService.withdraw(1L, req(CODE, PHRASE, false));
+
+    assertThat(user.isActive()).isFalse();
+    then(s3Service).should().deleteQuietly(croppedKey);
+    then(s3Service).should().deleteQuietly(originalKey);
+  }
+
+  @Test
+  @DisplayName("withdraw_원본키없음_크롭만_deleteQuietly_원본키삭제미호출")
+  void withdraw_noOriginalImage_deletesOnlyCroppedKey() {
+    User user = buildLocalUser(1L, "유저");
+    String croppedKey = UploadPolicy.PROFILE_IMAGES_PREFIX + "/uuid/cropped.jpg";
+    ReflectionTestUtils.setField(user, "profileImageKey", croppedKey);
+    User admin = buildAdmin();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(userRepository.findByPublicId(AdminAccount.PUBLIC_ID)).willReturn(Optional.of(admin));
+
+    userService.withdraw(1L, req(CODE, PHRASE, false));
+
+    then(s3Service).should().deleteQuietly(croppedKey);
+    then(s3Service).should(org.mockito.Mockito.times(1)).deleteQuietly(anyString());
   }
 
   @Test

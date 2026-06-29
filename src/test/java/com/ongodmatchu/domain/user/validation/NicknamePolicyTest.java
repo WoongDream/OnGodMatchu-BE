@@ -130,31 +130,21 @@ class NicknamePolicyTest {
         .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
   }
 
-  // ============ enforce — reserved (사칭 차단) ============
+  // ============ enforce — reserved (예약어 차단은 ForbiddenNicknameService 로 이관) ============
 
   @Test
-  @DisplayName("enforce_관리자_RESERVED차단")
-  void enforce_reservedAdmin_throws() {
-    assertThatThrownBy(() -> nicknamePolicy.enforce("관리자"))
-        .isInstanceOf(BusinessException.class)
-        .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
+  @DisplayName("enforce_관리자_형식정책은통과(예약어차단은DB기반_ForbiddenNicknameService_담당)")
+  void enforce_reservedAdmin_passesFormat() {
+    // V36 이후 예약어 차단은 NicknamePolicy 에서 제거되어 ForbiddenNicknameService 로 이관됨.
+    // 관리자 는 형식상 유효 — 차단은 가입/변경 경로의 assertAllowed 에서 별도 수행.
+    nicknamePolicy.enforce("관리자");
   }
 
   @Test
-  @DisplayName("enforce_탈퇴한사용자_공백제거형_RESERVED차단")
-  void enforce_reservedWithdrawnNoSpace_throws() {
-    assertThatThrownBy(() -> nicknamePolicy.enforce("탈퇴한사용자"))
-        .isInstanceOf(BusinessException.class)
-        .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.INVALID_NICKNAME_FORMAT);
-  }
-
-  @Test
-  @DisplayName("isValid_RESERVED닉네임_false반환")
-  void isValid_reserved_returnsFalse() {
-    assertThat(nicknamePolicy.isValid("관리자")).isFalse();
-    assertThat(nicknamePolicy.isValid("탈퇴한사용자")).isFalse();
+  @DisplayName("isValid_관리자_탈퇴한사용자_형식상유효_true (예약어차단은_ForbiddenNicknameService)")
+  void isValid_reserved_returnsTrueForFormat() {
+    assertThat(nicknamePolicy.isValid("관리자")).isTrue();
+    assertThat(nicknamePolicy.isValid("탈퇴한사용자")).isTrue();
   }
 
   // ============ isValid — sanity check ============

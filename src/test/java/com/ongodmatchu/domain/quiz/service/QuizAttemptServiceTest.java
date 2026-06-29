@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.then;
 import static org.mockito.Mockito.lenient;
@@ -63,6 +64,11 @@ class QuizAttemptServiceTest {
   @BeforeEach
   void setUp() {
     lenient().when(s3Service.batchPresignViewUrls(any())).thenReturn(Map.of());
+    // save() 는 항상 전달된 attempt 를 그대로 반환 (assignTopPercentile 호출 대상이 null 이 되지 않도록).
+    // id 가 필요한 테스트는 개별적으로 willAnswer 로 override 한다.
+    lenient()
+        .when(quizAttemptRepository.save(any(QuizAttempt.class)))
+        .thenAnswer(inv -> inv.getArgument(0));
   }
 
   // ─── 픽스처 헬퍼 ────────────────────────────────────────────────────────────
@@ -103,6 +109,13 @@ class QuizAttemptServiceTest {
     return attempt;
   }
 
+  private QuizAttemptRepository.AttemptGroupRow stubGroupRow(Long quizId, long attemptCount) {
+    QuizAttemptRepository.AttemptGroupRow row = mock(QuizAttemptRepository.AttemptGroupRow.class);
+    given(row.getQuizId()).willReturn(quizId);
+    given(row.getAttemptCount()).willReturn(attemptCount);
+    return row;
+  }
+
   // ─── submit() ───────────────────────────────────────────────────────────────
 
   @Test
@@ -111,7 +124,7 @@ class QuizAttemptServiceTest {
     given(quizRepository.findById(99L)).willReturn(Optional.empty());
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(1L, "답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(1L, "답")), null);
 
     assertThatThrownBy(() -> quizAttemptService.submit(99L, 1L, request))
         .isInstanceOf(BusinessException.class)
@@ -127,7 +140,7 @@ class QuizAttemptServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "답")), null);
 
     assertThatThrownBy(() -> quizAttemptService.submit(1L, 99L, request))
         .isInstanceOf(BusinessException.class)
@@ -143,7 +156,7 @@ class QuizAttemptServiceTest {
     given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "답")), null);
 
     assertThatThrownBy(() -> quizAttemptService.submit(1L, null, request))
         .isInstanceOf(BusinessException.class)
@@ -169,7 +182,7 @@ class QuizAttemptServiceTest {
             });
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), 10);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, 1L, request);
 
@@ -195,7 +208,7 @@ class QuizAttemptServiceTest {
             });
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), 15);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -210,6 +223,7 @@ class QuizAttemptServiceTest {
     assertThat(saved.getQuiz()).isEqualTo(quiz);
     assertThat(saved.getScore()).isEqualTo(1);
     assertThat(saved.getTotalQuestions()).isEqualTo(1);
+    assertThat(saved.getTimeLimitSec()).isEqualTo(15);
   }
 
   @Test
@@ -230,7 +244,7 @@ class QuizAttemptServiceTest {
             });
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, 1L, request);
 
@@ -248,7 +262,7 @@ class QuizAttemptServiceTest {
     given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -267,7 +281,7 @@ class QuizAttemptServiceTest {
     given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "hello")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "hello")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -286,7 +300,7 @@ class QuizAttemptServiceTest {
     given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "  정답  ")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "  정답  ")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -305,7 +319,7 @@ class QuizAttemptServiceTest {
     given(aiGradingService.grade("수도", "서울")).willReturn(true);
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "서울")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "서울")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -324,7 +338,7 @@ class QuizAttemptServiceTest {
     given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -344,7 +358,7 @@ class QuizAttemptServiceTest {
     given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "   ")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "   ")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -364,7 +378,7 @@ class QuizAttemptServiceTest {
     given(aiGradingService.grade("정답", "오답")).willReturn(false);
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "오답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "오답")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -392,7 +406,8 @@ class QuizAttemptServiceTest {
             List.of(
                 new AttemptAnswerRequest(10L, "정답1"),
                 new AttemptAnswerRequest(11L, "틀린답"),
-                new AttemptAnswerRequest(12L, "틀린답")));
+                new AttemptAnswerRequest(12L, "틀린답")),
+            null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -412,7 +427,7 @@ class QuizAttemptServiceTest {
 
     // 존재하지 않는 questionId=999
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(999L, "아무답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(999L, "아무답")), null);
 
     assertThatThrownBy(() -> quizAttemptService.submit(1L, null, request))
         .isInstanceOf(BusinessException.class)
@@ -431,7 +446,7 @@ class QuizAttemptServiceTest {
     given(aiGradingService.grade(any(), any())).willReturn(false);
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "내 답변")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "내 답변")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -457,7 +472,8 @@ class QuizAttemptServiceTest {
 
     AttemptCreateRequest request =
         new AttemptCreateRequest(
-            List.of(new AttemptAnswerRequest(10L, "정답1"), new AttemptAnswerRequest(11L, "정답2")));
+            List.of(new AttemptAnswerRequest(10L, "정답1"), new AttemptAnswerRequest(11L, "정답2")),
+            null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -476,7 +492,7 @@ class QuizAttemptServiceTest {
     given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), null);
 
     AttemptResultResponse result = quizAttemptService.submit(1L, null, request);
 
@@ -504,7 +520,7 @@ class QuizAttemptServiceTest {
     // q1 정답, q2 오답
     AttemptCreateRequest request =
         new AttemptCreateRequest(
-            List.of(new AttemptAnswerRequest(10L, "A"), new AttemptAnswerRequest(11L, "틀림")));
+            List.of(new AttemptAnswerRequest(10L, "A"), new AttemptAnswerRequest(11L, "틀림")), 30);
     given(aiGradingService.grade("B", "틀림")).willReturn(false);
 
     quizAttemptService.submit(1L, 1L, request);
@@ -516,74 +532,178 @@ class QuizAttemptServiceTest {
     assertThat(saved.getTotalQuestions()).isEqualTo(2);
     assertThat(saved.getUser()).isSameAs(owner);
     assertThat(saved.getQuiz()).isSameAs(quiz);
+    assertThat(saved.getTimeLimitSec()).isEqualTo(30);
+  }
+
+  @Test
+  @DisplayName("submit_timeLimitSec_null전달시_저장된attempt도_null")
+  void submit_nullTimeLimitSec_savedAttemptHasNull() {
+    User owner = testUser(1L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    Question q = testQuestion(quiz, 10L, "정답");
+    given(quizRepository.findById(1L)).willReturn(Optional.of(quiz));
+    given(questionRepository.findByQuizIdOrderByOrderNum(1L)).willReturn(List.of(q));
+    given(userRepository.findById(1L)).willReturn(Optional.of(owner));
+    given(quizAttemptRepository.save(any(QuizAttempt.class)))
+        .willAnswer(
+            inv -> {
+              ReflectionTestUtils.setField((QuizAttempt) inv.getArgument(0), "id", 60L);
+              return inv.getArgument(0);
+            });
+
+    AttemptCreateRequest request =
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), null);
+
+    quizAttemptService.submit(1L, 1L, request);
+
+    ArgumentCaptor<QuizAttempt> captor = ArgumentCaptor.forClass(QuizAttempt.class);
+    then(quizAttemptRepository).should().save(captor.capture());
+    assertThat(captor.getValue().getTimeLimitSec()).isNull();
   }
 
   // ─── getMyAttempts() ────────────────────────────────────────────────────────
 
+  /**
+   * 그룹화 경로(findAttemptGroupsByUserId → findLatestAttemptsPerQuiz) 공통 stub. groups 의 quizId 순서가 응답
+   * 정렬 순서로 보존된다. latestAttempts 는 각 quiz 의 최신 attempt.
+   */
+  private void stubGroups(
+      Long userId,
+      String title,
+      Page<QuizAttemptRepository.AttemptGroupRow> groups,
+      List<QuizAttempt> latestAttempts) {
+    List<Long> quizIds =
+        groups.getContent().stream().map(QuizAttemptRepository.AttemptGroupRow::getQuizId).toList();
+    given(
+            quizAttemptRepository.findAttemptGroupsByUserId(
+                eq(userId), title == null ? isNull() : eq(title), any(Pageable.class)))
+        .willReturn(groups);
+    lenient()
+        .when(quizAttemptRepository.findLatestAttemptsPerQuiz(eq(userId), eq(quizIds)))
+        .thenReturn(latestAttempts);
+  }
+
+  /**
+   * 외부/비로그인 시점 경로(findAttemptGroupsByUserIdAndVisibility(PUBLIC) → findLatestAttemptsPerQuiz) 공통
+   * stub. 본인 경로(stubGroups)의 자매 헬퍼로, 비공개 퀴즈 제외(visibility=PUBLIC) 조회를 흉내 낸다.
+   */
+  private void stubGroupsByVisibility(
+      Long userId,
+      Page<QuizAttemptRepository.AttemptGroupRow> groups,
+      List<QuizAttempt> latestAttempts) {
+    List<Long> quizIds =
+        groups.getContent().stream().map(QuizAttemptRepository.AttemptGroupRow::getQuizId).toList();
+    given(
+            quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+                eq(userId), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
+        .willReturn(groups);
+    lenient()
+        .when(quizAttemptRepository.findLatestAttemptsPerQuiz(eq(userId), eq(quizIds)))
+        .thenReturn(latestAttempts);
+  }
+
   @Test
-  @DisplayName("getMyAttempts_정상반환_s3batchPresign호출")
+  @DisplayName("getMyAttempts_그룹정상반환_s3batchPresign호출_attemptCount전달")
   void getMyAttempts_returnsPage_andCallsBatchPresign() {
     User user = testUser(1L);
     Quiz quiz = testQuiz(user, QuizVisibility.PUBLIC);
     QuizAttempt attempt = testAttempt(user, quiz, 3, 5);
-    Page<QuizAttempt> page = new PageImpl<>(List.of(attempt));
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(1L), any(Pageable.class)))
-        .willReturn(page);
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        new PageImpl<>(List.of(stubGroupRow(1L, 4L)), PageRequest.of(0, 20), 1);
+    stubGroups(1L, null, groups, List.of(attempt));
     given(s3Service.batchPresignViewUrls(any())).willReturn(Map.of());
 
     Page<AttemptListItemResponse> result =
-        quizAttemptService.getMyAttempts(1L, PageRequest.of(0, 20));
+        quizAttemptService.getMyAttempts(1L, null, PageRequest.of(0, 20));
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).score()).isEqualTo(3);
     assertThat(result.getContent().get(0).totalQuestions()).isEqualTo(5);
+    assertThat(result.getContent().get(0).attemptCount()).isEqualTo(4L);
     then(s3Service).should().batchPresignViewUrls(any());
+  }
+
+  @Test
+  @DisplayName("getMyAttempts_그룹정렬순서보존")
+  void getMyAttempts_preservesGroupOrder() {
+    User user = testUser(1L);
+    Quiz quizA = testQuiz(user, QuizVisibility.PUBLIC);
+    Quiz quizB = testQuiz(user, QuizVisibility.PUBLIC);
+    ReflectionTestUtils.setField(quizB, "id", 2L);
+    QuizAttempt attemptA = testAttempt(user, quizA, 1, 5);
+    QuizAttempt attemptB = testAttempt(user, quizB, 2, 5);
+    // groups 순서: quiz 2 먼저, quiz 1 나중 → 응답도 동일 순서여야 한다.
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        new PageImpl<>(
+            List.of(stubGroupRow(2L, 1L), stubGroupRow(1L, 3L)), PageRequest.of(0, 20), 2);
+    stubGroups(1L, null, groups, List.of(attemptA, attemptB));
+
+    Page<AttemptListItemResponse> result =
+        quizAttemptService.getMyAttempts(1L, null, PageRequest.of(0, 20));
+
+    assertThat(result.getContent()).hasSize(2);
+    assertThat(result.getContent().get(0).quizId()).isEqualTo(2L);
+    assertThat(result.getContent().get(0).attemptCount()).isEqualTo(1L);
+    assertThat(result.getContent().get(1).quizId()).isEqualTo(1L);
+    assertThat(result.getContent().get(1).attemptCount()).isEqualTo(3L);
+  }
+
+  @Test
+  @DisplayName("getMyAttempts_title_공백_repo호출시_null로전달")
+  void getMyAttempts_blankTitle_passedAsNull() {
+    given(quizAttemptRepository.findAttemptGroupsByUserId(eq(1L), isNull(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+    quizAttemptService.getMyAttempts(1L, "   ", PageRequest.of(0, 20));
+
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    then(quizAttemptRepository)
+        .should()
+        .findAttemptGroupsByUserId(eq(1L), titleCaptor.capture(), any(Pageable.class));
+    assertThat(titleCaptor.getValue()).isNull();
+  }
+
+  @Test
+  @DisplayName("getMyAttempts_title_주어지면_trim후_repo로전달")
+  void getMyAttempts_title_trimmedAndPassed() {
+    given(quizAttemptRepository.findAttemptGroupsByUserId(eq(1L), eq("퀴즈"), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+    quizAttemptService.getMyAttempts(1L, "  퀴즈  ", PageRequest.of(0, 20));
+
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    then(quizAttemptRepository)
+        .should()
+        .findAttemptGroupsByUserId(eq(1L), titleCaptor.capture(), any(Pageable.class));
+    assertThat(titleCaptor.getValue()).isEqualTo("퀴즈");
   }
 
   @Test
   @DisplayName("getMyAttempts_pageSize50초과_50으로cap")
   void getMyAttempts_pageSizeCappedAt50() {
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(1L), any(Pageable.class)))
-        .willReturn(new PageImpl<>(List.of()));
+    given(quizAttemptRepository.findAttemptGroupsByUserId(eq(1L), isNull(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 50), 0));
 
-    quizAttemptService.getMyAttempts(1L, PageRequest.of(0, 200));
+    quizAttemptService.getMyAttempts(1L, null, PageRequest.of(0, 200));
 
     ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
     then(quizAttemptRepository)
         .should()
-        .findByUserIdOrderByCompletedAtDesc(eq(1L), captor.capture());
+        .findAttemptGroupsByUserId(eq(1L), isNull(), captor.capture());
     assertThat(captor.getValue().getPageSize()).isEqualTo(50);
-  }
-
-  @Test
-  @DisplayName("getMyAttempts_pageSize0_defaultSize20으로cap")
-  void getMyAttempts_pageSizeZero_defaultsTo20() {
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(1L), any(Pageable.class)))
-        .willReturn(new PageImpl<>(List.of()));
-
-    // size=0 은 Pageable 생성 제약으로 직접 주입
-    Pageable pageable = PageRequest.of(0, 1);
-    // 실제 pageSize=0 시나리오는 applyPageDefaults 내부 로직상 <=0 → DEFAULT_PAGE_SIZE
-    // PageRequest.of(0, 1) 은 size>0 이므로 size=1 로 cap 됨. 경계 검증은 size=50 시나리오로 보완됨.
-    quizAttemptService.getMyAttempts(1L, pageable);
-
-    ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
-    then(quizAttemptRepository)
-        .should()
-        .findByUserIdOrderByCompletedAtDesc(eq(1L), captor.capture());
-    assertThat(captor.getValue().getPageSize()).isEqualTo(1);
   }
 
   @Test
   @DisplayName("getMyAttempts_빈결과_빈페이지반환")
   void getMyAttempts_noAttempts_returnsEmptyPage() {
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(1L), any(Pageable.class)))
-        .willReturn(new PageImpl<>(List.of()));
+    given(quizAttemptRepository.findAttemptGroupsByUserId(eq(1L), isNull(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
 
     Page<AttemptListItemResponse> result =
-        quizAttemptService.getMyAttempts(1L, PageRequest.of(0, 20));
+        quizAttemptService.getMyAttempts(1L, null, PageRequest.of(0, 20));
 
     assertThat(result.getContent()).isEmpty();
+    then(quizAttemptRepository).should(never()).findLatestAttemptsPerQuiz(any(), any());
   }
 
   @Test
@@ -593,14 +713,14 @@ class QuizAttemptServiceTest {
     Quiz quiz = testQuiz(user, QuizVisibility.PUBLIC);
     ReflectionTestUtils.setField(quiz, "thumbnailKey", "quiz-images/thumb.png");
     QuizAttempt attempt = testAttempt(user, quiz, 5, 10);
-    Page<QuizAttempt> page = new PageImpl<>(List.of(attempt));
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(1L), any(Pageable.class)))
-        .willReturn(page);
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        new PageImpl<>(List.of(stubGroupRow(1L, 1L)), PageRequest.of(0, 20), 1);
+    stubGroups(1L, null, groups, List.of(attempt));
     given(s3Service.batchPresignViewUrls(List.of("quiz-images/thumb.png")))
         .willReturn(Map.of("quiz-images/thumb.png", "https://signed.example/thumb.png"));
 
     Page<AttemptListItemResponse> result =
-        quizAttemptService.getMyAttempts(1L, PageRequest.of(0, 20));
+        quizAttemptService.getMyAttempts(1L, null, PageRequest.of(0, 20));
 
     assertThat(result.getContent().get(0).quizThumbnailUrl())
         .isEqualTo("https://signed.example/thumb.png");
@@ -612,13 +732,33 @@ class QuizAttemptServiceTest {
     User user = testUser(1L);
     Quiz quiz = testQuiz(user, QuizVisibility.PUBLIC);
     QuizAttempt attempt = testAttempt(user, quiz, 5, 10);
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(1L), any(Pageable.class)))
-        .willReturn(new PageImpl<>(List.of(attempt)));
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        new PageImpl<>(List.of(stubGroupRow(1L, 2L)), PageRequest.of(0, 20), 1);
+    stubGroups(1L, null, groups, List.of(attempt));
 
     Page<AttemptListItemResponse> result =
-        quizAttemptService.getMyAttempts(1L, PageRequest.of(0, 20));
+        quizAttemptService.getMyAttempts(1L, null, PageRequest.of(0, 20));
 
     assertThat(result.getContent().get(0).percent()).isEqualTo(50.0);
+  }
+
+  @Test
+  @DisplayName("getMyAttempts_timeLimitSec/topPercentile_스냅샷_응답에포함")
+  void getMyAttempts_snapshotFieldsIncluded() {
+    User user = testUser(1L);
+    Quiz quiz = testQuiz(user, QuizVisibility.PUBLIC);
+    QuizAttempt attempt = testAttempt(user, quiz, 3, 5);
+    ReflectionTestUtils.setField(attempt, "timeLimitSec", 20);
+    attempt.assignTopPercentile(12.5);
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        new PageImpl<>(List.of(stubGroupRow(1L, 1L)), PageRequest.of(0, 20), 1);
+    stubGroups(1L, null, groups, List.of(attempt));
+
+    Page<AttemptListItemResponse> result =
+        quizAttemptService.getMyAttempts(1L, null, PageRequest.of(0, 20));
+
+    assertThat(result.getContent().get(0).timeLimitSec()).isEqualTo(20);
+    assertThat(result.getContent().get(0).topPercentile()).isEqualTo(12.5);
   }
 
   // ─── getAttemptsByPublicId() ─────────────────────────────────────────────────
@@ -648,7 +788,7 @@ class QuizAttemptServiceTest {
         quizAttemptService.getAttemptsByPublicId(authorPublicId, 99L, PageRequest.of(0, 20));
 
     assertThat(result.getContent()).isEmpty();
-    then(quizAttemptRepository).should(never()).findByUserIdOrderByCompletedAtDesc(any(), any());
+    then(quizAttemptRepository).should(never()).findAttemptGroupsByUserId(any(), any(), any());
   }
 
   @Test
@@ -663,7 +803,7 @@ class QuizAttemptServiceTest {
         quizAttemptService.getAttemptsByPublicId(authorPublicId, null, PageRequest.of(0, 20));
 
     assertThat(result.getContent()).isEmpty();
-    then(quizAttemptRepository).should(never()).findByUserIdOrderByCompletedAtDesc(any(), any());
+    then(quizAttemptRepository).should(never()).findAttemptGroupsByUserId(any(), any(), any());
   }
 
   @Test
@@ -675,8 +815,9 @@ class QuizAttemptServiceTest {
     Quiz quiz = testQuiz(author, QuizVisibility.PUBLIC);
     QuizAttempt attempt = testAttempt(author, quiz, 4, 5);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(2L), any(Pageable.class)))
-        .willReturn(new PageImpl<>(List.of(attempt)));
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        new PageImpl<>(List.of(stubGroupRow(1L, 1L)), PageRequest.of(0, 20), 1);
+    stubGroups(2L, null, groups, List.of(attempt));
 
     Page<AttemptListItemResponse> result =
         quizAttemptService.getAttemptsByPublicId(authorPublicId, 2L, PageRequest.of(0, 20));
@@ -693,14 +834,21 @@ class QuizAttemptServiceTest {
     Quiz quiz = testQuiz(author, QuizVisibility.PUBLIC);
     QuizAttempt attempt = testAttempt(author, quiz, 2, 5);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(2L), any(Pageable.class)))
-        .willReturn(new PageImpl<>(List.of(attempt)));
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        new PageImpl<>(List.of(stubGroupRow(1L, 1L)), PageRequest.of(0, 20), 1);
+    stubGroupsByVisibility(2L, groups, List.of(attempt));
 
     Page<AttemptListItemResponse> result =
         quizAttemptService.getAttemptsByPublicId(authorPublicId, 99L, PageRequest.of(0, 20));
 
     assertThat(result.getContent()).hasSize(1);
     assertThat(result.getContent().get(0).score()).isEqualTo(2);
+    // 외부 뷰어는 PUBLIC 한정 그룹 조회를 사용하고, 전체 조회는 사용하지 않는다.
+    then(quizAttemptRepository)
+        .should()
+        .findAttemptGroupsByUserIdAndVisibility(
+            eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
+    then(quizAttemptRepository).should(never()).findAttemptGroupsByUserId(any(), any(), any());
   }
 
   @Test
@@ -711,13 +859,59 @@ class QuizAttemptServiceTest {
     Quiz quiz = testQuiz(author, QuizVisibility.PUBLIC);
     QuizAttempt attempt = testAttempt(author, quiz, 1, 5);
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(2L), any(Pageable.class)))
-        .willReturn(new PageImpl<>(List.of(attempt)));
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        new PageImpl<>(List.of(stubGroupRow(1L, 1L)), PageRequest.of(0, 20), 1);
+    stubGroupsByVisibility(2L, groups, List.of(attempt));
 
     Page<AttemptListItemResponse> result =
         quizAttemptService.getAttemptsByPublicId(authorPublicId, null, PageRequest.of(0, 20));
 
     assertThat(result.getContent()).hasSize(1);
+    // 비로그인도 외부 뷰어와 동일하게 PUBLIC 한정 그룹 조회를 사용한다.
+    then(quizAttemptRepository)
+        .should()
+        .findAttemptGroupsByUserIdAndVisibility(
+            eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
+    then(quizAttemptRepository).should(never()).findAttemptGroupsByUserId(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("getAttemptsByPublicId_외부뷰어_PUBLIC한정_그룹조회사용")
+  void getAttemptsByPublicId_externalViewer_usesVisibilityScopedQuery() {
+    User author = testUser(2L);
+    UUID authorPublicId = author.getPublicId();
+    given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
+    given(
+            quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+                eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+    quizAttemptService.getAttemptsByPublicId(authorPublicId, null, PageRequest.of(0, 20));
+
+    then(quizAttemptRepository)
+        .should()
+        .findAttemptGroupsByUserIdAndVisibility(
+            eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class));
+    then(quizAttemptRepository).should(never()).findAttemptGroupsByUserId(any(), any(), any());
+  }
+
+  @Test
+  @DisplayName("getAttemptsByPublicId_본인_전체그룹조회_title은null로전달")
+  void getAttemptsByPublicId_owner_usesFullQueryWithNullTitle() {
+    User author = testUser(2L);
+    UUID authorPublicId = author.getPublicId();
+    given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
+    given(quizAttemptRepository.findAttemptGroupsByUserId(eq(2L), isNull(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+    quizAttemptService.getAttemptsByPublicId(authorPublicId, 2L, PageRequest.of(0, 20));
+
+    then(quizAttemptRepository)
+        .should()
+        .findAttemptGroupsByUserId(eq(2L), isNull(), any(Pageable.class));
+    then(quizAttemptRepository)
+        .should(never())
+        .findAttemptGroupsByUserIdAndVisibility(any(), any(), any());
   }
 
   @Test
@@ -726,15 +920,18 @@ class QuizAttemptServiceTest {
     User author = testUser(2L);
     UUID authorPublicId = author.getPublicId();
     given(userRepository.findByPublicId(authorPublicId)).willReturn(Optional.of(author));
-    given(quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(eq(2L), any(Pageable.class)))
-        .willReturn(new PageImpl<>(List.of()));
+    given(
+            quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+                eq(2L), eq(QuizVisibility.PUBLIC), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(), PageRequest.of(0, 50), 0));
 
     quizAttemptService.getAttemptsByPublicId(authorPublicId, null, PageRequest.of(0, 200));
 
     ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
     then(quizAttemptRepository)
         .should()
-        .findByUserIdOrderByCompletedAtDesc(eq(2L), captor.capture());
+        .findAttemptGroupsByUserIdAndVisibility(
+            eq(2L), eq(QuizVisibility.PUBLIC), captor.capture());
     assertThat(captor.getValue().getPageSize()).isEqualTo(50);
   }
 
@@ -758,7 +955,7 @@ class QuizAttemptServiceTest {
             });
 
     AttemptCreateRequest request =
-        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")));
+        new AttemptCreateRequest(List.of(new AttemptAnswerRequest(10L, "정답")), null);
     return quizAttemptService.submit(1L, viewerUserId, request);
   }
 

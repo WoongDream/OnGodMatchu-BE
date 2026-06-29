@@ -21,7 +21,7 @@ public record CommentResponse(
     return new CommentResponse(
         comment.getId(),
         comment.getContent(),
-        author.getPublicId(),
+        UserDisplay.publicIdOf(author),
         UserDisplay.nicknameOf(author),
         UserDisplay.profileImageUrlOf(author, authorProfileImageUrl),
         TimeFormat.toResponse(comment.getCreatedAt()),

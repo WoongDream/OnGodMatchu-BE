@@ -62,10 +62,11 @@ public class QuizController {
   @Operation(
       summary = "공개 퀴즈 목록",
       description =
-          "PUBLIC 퀴즈만. category 파라미터로 필터. 비로그인 허용. 기본 정렬 = playCount DESC, createdAt DESC (tiebreaker). 인증 시 isStarred 채움, 비로그인은 null")
+          "PUBLIC 퀴즈만. category 필터 + q(제목 부분검색, 대소문자 무시) 옵션. 비로그인 허용. 기본 정렬(인기순) = playCount DESC, createdAt DESC (tiebreaker), 최신순은 sort=createdAt,desc. 인증 시 isStarred 채움, 비로그인은 null")
   @GetMapping
   public ResponseEntity<ApiResponse<Page<QuizResponse>>> getQuizList(
       @RequestParam(required = false) String category,
+      @RequestParam(required = false) String q,
       @PageableDefault(
               size = 12,
               sort = {"playCount", "createdAt"},
@@ -73,7 +74,8 @@ public class QuizController {
           Pageable pageable,
       @AuthenticationPrincipal CustomUserDetails userDetails) {
     Long viewerId = userDetails != null ? userDetails.getUser().getId() : null;
-    return ResponseEntity.ok(ApiResponse.ok(quizService.getQuizList(category, viewerId, pageable)));
+    return ResponseEntity.ok(
+        ApiResponse.ok(quizService.getQuizList(category, q, viewerId, pageable)));
   }
 
   @Operation(

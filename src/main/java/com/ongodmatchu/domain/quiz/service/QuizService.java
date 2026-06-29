@@ -5,6 +5,7 @@ import com.ongodmatchu.domain.question.entity.Question;
 import com.ongodmatchu.domain.question.repository.QuestionRepository;
 import com.ongodmatchu.domain.quiz.dto.CategoryResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
+import com.ongodmatchu.domain.quiz.dto.PublicProfileStats;
 import com.ongodmatchu.domain.quiz.dto.QuestionCreateRequest;
 import com.ongodmatchu.domain.quiz.dto.QuestionResponse;
 import com.ongodmatchu.domain.quiz.dto.QuestionUpdateRequest;
@@ -51,7 +52,6 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -83,11 +83,11 @@ public class QuizService {
   }
 
   @Transactional(readOnly = true)
-  public Page<QuizResponse> getQuizList(String category, Long viewerUserId, Pageable pageable) {
+  public Page<QuizResponse> getQuizList(
+      String category, String keyword, Long viewerUserId, Pageable pageable) {
     Page<Quiz> page =
-        StringUtils.hasText(category)
-            ? quizRepository.findByCategoryAndVisibility(category, QuizVisibility.PUBLIC, pageable)
-            : quizRepository.findByVisibility(QuizVisibility.PUBLIC, pageable);
+        quizRepository.searchPublic(
+            QuizVisibility.PUBLIC, normalizeTitle(category), normalizeTitle(keyword), pageable);
 
     List<String> keys =
         page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
@@ -103,6 +103,39 @@ public class QuizService {
                 lookupUrl(presigned, q.getThumbnailKey()),
                 viewerUserId == null ? null : starredQuizIds.contains(q.getId()),
                 rateByQuizId.get(q.getId())));
+  }
+
+  /**
+   * 내가 스타 준 퀴즈 목록 (내 전용). 스타 누른 시각 DESC, 메인 목록과 동일한 QuizResponse 스키마. isStarred 는 전부 true. title 로
+   * 제목 부분일치 검색(옵션). size 디폴트 20 / 최대 50.
+   */
+  @Transactional(readOnly = true)
+  public Page<QuizResponse> getMyStarredQuizzes(Long userId, String title, Pageable pageable) {
+    Pageable effective = applyPageDefaultsNoSort(pageable);
+    Page<Quiz> page =
+        quizStarRepository.findStarredQuizzesByUserId(userId, normalizeTitle(title), effective);
+
+    List<String> keys =
+        page.getContent().stream().map(Quiz::getThumbnailKey).filter(k -> k != null).toList();
+    Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
+    Map<Long, Double> rateByQuizId = rateMapForPage(page);
+
+    return page.map(
+        q ->
+            QuizResponse.from(
+                q, lookupUrl(presigned, q.getThumbnailKey()), true, rateByQuizId.get(q.getId())));
+  }
+
+  private Pageable applyPageDefaultsNoSort(Pageable pageable) {
+    int size = Math.min(pageable.getPageSize(), MAX_PAGE_SIZE);
+    if (size <= 0) {
+      size = DEFAULT_PAGE_SIZE;
+    }
+    return PageRequest.of(pageable.getPageNumber(), size);
+  }
+
+  private static String normalizeTitle(String title) {
+    return (title == null || title.isBlank()) ? null : title.trim();
   }
 
   private Set<Long> starredQuizIdsForPage(Long viewerUserId, Page<Quiz> page) {
@@ -391,6 +424,22 @@ public class QuizService {
         avgCorrectRate,
         solvedCount,
         avgSolveRate);
+  }
+
+  /**
+   * 타인 시점 프로필 요약 통계 — 전부 PUBLIC 퀴즈 기준 (비공개 퀴즈는 타인 노출/통계 제외). 만든 퀴즈(개수/총플레이/받은스타)는 PUBLIC 집계,
+   * 풀어봄/정답률은 PUBLIC 퀴즈 attempt 한정.
+   */
+  @Transactional(readOnly = true)
+  public PublicProfileStats getPublicProfileStats(Long userId) {
+    QuizAggregateRow row =
+        quizRepository.aggregateByUserIdAndVisibility(userId, QuizVisibility.PUBLIC);
+    long solvedCount =
+        quizAttemptRepository.countByUserIdAndQuizVisibility(userId, QuizVisibility.PUBLIC);
+    Double avgSolveRate =
+        quizAttemptRepository.avgSolveRateOfByQuizVisibility(userId, QuizVisibility.PUBLIC);
+    return new PublicProfileStats(
+        row.getQuizCount(), row.getPlays(), row.getStars(), solvedCount, avgSolveRate);
   }
 
   private Pageable applyPageDefaults(Pageable pageable, QuizSort sort) {

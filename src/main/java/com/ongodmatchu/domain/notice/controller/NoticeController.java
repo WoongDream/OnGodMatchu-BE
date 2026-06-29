@@ -17,21 +17,12 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequiredArgsConstructor
-@Tag(
-    name = "Notice",
-    description =
-        "공지사항 조회. 본문은 Markdown 으로 `src/main/resources/notices/announcements/` 의 정적 파일에서 로드된다. "
-            + "식별자는 파일명 기반 slug (예: `service-open`). 비로그인 열람 허용 (permitAll). "
-            + "릴리즈 노트는 FE 정적 markdown 으로 옮겨졌으며 BE 엔드포인트 없음.")
+@Tag(name = "Notice", description = "공지사항 공개 조회. 게시 상태만 노출, 고정 공지 우선. 비로그인 열람 허용 (permitAll).")
 public class NoticeController {
 
   private final NoticeService noticeService;
 
-  @Operation(
-      summary = "공지사항 목록",
-      description =
-          "공지사항을 최신순으로 반환. 디폴트 size=20 / max=50. 정렬은 `publishedAt DESC, slug DESC` 강제. "
-              + "에러 없음 — 빈 페이지는 정상 응답.")
+  @Operation(summary = "공지사항 목록", description = "게시된 공지만 반환. 고정 우선 + 최신 게시순. 디폴트 size=20 / max=50.")
   @GetMapping("/api/announcements")
   public ResponseEntity<ApiResponse<Page<NoticeListItemResponse>>> getAnnouncements(
       @PageableDefault(size = 20) Pageable pageable) {
@@ -40,10 +31,10 @@ public class NoticeController {
 
   @Operation(
       summary = "공지사항 단건 조회",
-      description = "slug 로 공지사항 단건 조회. 존재하지 않음 → 404 `NOTICE_NOT_FOUND`.")
-  @GetMapping("/api/announcements/{slug}")
+      description = "id 로 게시된 공지 단건 조회. 조회 시 조회수 +1. 없거나 미게시 → 404 `NOTICE_NOT_FOUND`.")
+  @GetMapping("/api/announcements/{id}")
   public ResponseEntity<ApiResponse<NoticeDetailResponse>> getAnnouncementDetail(
-      @PathVariable String slug) {
-    return ResponseEntity.ok(ApiResponse.ok(noticeService.getAnnouncementDetail(slug)));
+      @PathVariable Long id) {
+    return ResponseEntity.ok(ApiResponse.ok(noticeService.getAnnouncementDetail(id)));
   }
 }

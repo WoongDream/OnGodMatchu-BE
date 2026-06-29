@@ -13,6 +13,7 @@ import com.ongodmatchu.domain.auth.repository.EmailVerificationRepository;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.auth.validation.TermsPolicy;
+import com.ongodmatchu.domain.nickname.service.ForbiddenNicknameService;
 import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.repository.UserRepository;
@@ -47,6 +48,7 @@ public class AuthService {
   private final PasswordValidator passwordValidator;
   private final NicknameNormalizer nicknameNormalizer;
   private final NicknamePolicy nicknamePolicy;
+  private final ForbiddenNicknameService forbiddenNicknameService;
   private final VerificationCodeRateLimiter rateLimiter;
   private final ProfileImageInitializer profileImageInitializer;
   private final S3Service s3Service;
@@ -100,6 +102,7 @@ public class AuthService {
 
     String nickname = nicknameNormalizer.normalize(request.nickname());
     nicknamePolicy.enforce(nickname);
+    forbiddenNicknameService.assertAllowed(nickname);
     if (userRepository.existsByNickname(nickname)) {
       throw new BusinessException(ErrorCode.NICKNAME_ALREADY_EXISTS);
     }
@@ -145,6 +148,10 @@ public class AuthService {
     if (!nicknamePolicy.isValid(nickname)) {
       return NicknameAvailabilityResponse.unavailable(NicknameAvailabilityResponse.REASON_FORMAT);
     }
+    String blockedTerm = forbiddenNicknameService.findBlockedTerm(nickname);
+    if (blockedTerm != null) {
+      return NicknameAvailabilityResponse.forbidden(blockedTerm);
+    }
     if (userRepository.existsByNickname(nickname)) {
       return NicknameAvailabilityResponse.unavailable(
           NicknameAvailabilityResponse.REASON_DUPLICATE);
@@ -159,8 +166,8 @@ public class AuthService {
             .findByEmail(request.email())
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
 
-    if (user.isSystem() || !user.isActive()) {
-      // 시스템 계정/탈퇴 계정은 로그인 차단 — 존재 자체를 노출하지 않도록 USER_NOT_FOUND 로 매핑.
+    if (!user.isActive()) {
+      // 탈퇴 계정은 로그인 차단 — 존재 자체를 노출하지 않도록 USER_NOT_FOUND 로 매핑.
       throw new BusinessException(ErrorCode.USER_NOT_FOUND);
     }
     if (user.getProvider() != AuthProvider.LOCAL) {
@@ -193,7 +200,7 @@ public class AuthService {
         userRepository
             .findById(refreshToken.getUserId())
             .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
-    if (user.isSystem() || !user.isActive()) {
+    if (!user.isActive()) {
       refreshTokenRepository.delete(refreshToken);
       throw new BusinessException(ErrorCode.UNAUTHORIZED);
     }

@@ -193,6 +193,135 @@ class WithdrawalCodeServiceTest {
         .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
   }
 
+  // ============ verify (dry-run) ============
+
+  @Test
+  @DisplayName("verify_정상_예외없이통과_코드미소비_RateLimit체크")
+  void verify_success_notConsumed() {
+    User user = buildUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    WithdrawalVerification v =
+        WithdrawalVerification.builder()
+            .userId(1L)
+            .code("123456")
+            .expiresAt(LocalDateTime.now().plusMinutes(5))
+            .build();
+    given(repository.findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(1L))
+        .willReturn(Optional.of(v));
+
+    service.verify(1L, "123456", "1.2.3.4");
+
+    then(rateLimiter).should().checkVerifyAttempt("user@example.com", "1.2.3.4", "withdrawal");
+    assertThat(v.isConsumed()).isFalse();
+    assertThat(v.getConsumedAt()).isNull();
+  }
+
+  @Test
+  @DisplayName("verify_RateLimit초과_RateLimitException_코드검증미수행")
+  void verify_rateLimited() {
+    User user = buildUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    willThrow(new RateLimitException(42))
+        .given(rateLimiter)
+        .checkVerifyAttempt("user@example.com", "1.2.3.4", "withdrawal");
+
+    assertThatThrownBy(() -> service.verify(1L, "123456", "1.2.3.4"))
+        .isInstanceOf(RateLimitException.class);
+
+    then(repository).should(never()).findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(any());
+  }
+
+  @Test
+  @DisplayName("verify_사용자미존재_USER_NOT_FOUND_RateLimit및코드검증미수행")
+  void verify_userNotFound() {
+    given(userRepository.findById(99L)).willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.verify(99L, "123456", "1.2.3.4"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+
+    then(rateLimiter).shouldHaveNoInteractions();
+    then(repository).shouldHaveNoInteractions();
+  }
+
+  @Test
+  @DisplayName("verify_미존재_INVALID_VERIFICATION_CODE")
+  void verify_notFound() {
+    User user = buildUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    given(repository.findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(1L))
+        .willReturn(Optional.empty());
+
+    assertThatThrownBy(() -> service.verify(1L, "123456", "1.2.3.4"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
+  }
+
+  @Test
+  @DisplayName("verify_만료_VERIFICATION_CODE_EXPIRED")
+  void verify_expired() {
+    User user = buildUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    WithdrawalVerification v =
+        WithdrawalVerification.builder()
+            .userId(1L)
+            .code("123456")
+            .expiresAt(LocalDateTime.now().minusMinutes(1))
+            .build();
+    given(repository.findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(1L))
+        .willReturn(Optional.of(v));
+
+    assertThatThrownBy(() -> service.verify(1L, "123456", "1.2.3.4"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.VERIFICATION_CODE_EXPIRED);
+    assertThat(v.isConsumed()).isFalse();
+  }
+
+  @Test
+  @DisplayName("verify_미일치_INVALID_VERIFICATION_CODE_consume안됨")
+  void verify_mismatch() {
+    User user = buildUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    WithdrawalVerification v =
+        WithdrawalVerification.builder()
+            .userId(1L)
+            .code("123456")
+            .expiresAt(LocalDateTime.now().plusMinutes(5))
+            .build();
+    given(repository.findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(1L))
+        .willReturn(Optional.of(v));
+
+    assertThatThrownBy(() -> service.verify(1L, "999999", "1.2.3.4"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
+    assertThat(v.isConsumed()).isFalse();
+  }
+
+  @Test
+  @DisplayName("verify_null코드_INVALID_VERIFICATION_CODE")
+  void verify_nullCode() {
+    User user = buildUser();
+    given(userRepository.findById(1L)).willReturn(Optional.of(user));
+    WithdrawalVerification v =
+        WithdrawalVerification.builder()
+            .userId(1L)
+            .code("123456")
+            .expiresAt(LocalDateTime.now().plusMinutes(5))
+            .build();
+    given(repository.findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(1L))
+        .willReturn(Optional.of(v));
+
+    assertThatThrownBy(() -> service.verify(1L, null, "1.2.3.4"))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.INVALID_VERIFICATION_CODE);
+    assertThat(v.isConsumed()).isFalse();
+  }
+
   private static org.mockito.verification.VerificationMode never() {
     return org.mockito.Mockito.never();
   }

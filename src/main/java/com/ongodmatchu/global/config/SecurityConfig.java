@@ -64,11 +64,13 @@ public class SecurityConfig {
                         "/api/users/me",
                         "/api/users/me/quizzes",
                         "/api/users/me/profile/stats",
-                        "/api/users/me/attempts")
+                        "/api/users/me/attempts",
+                        "/api/users/me/stars")
                     .authenticated()
                     .requestMatchers(
                         HttpMethod.GET,
                         "/api/users/*",
+                        "/api/users/*/profile/summary",
                         "/api/users/*/quizzes",
                         "/api/users/*/attempts")
                     .permitAll()
@@ -82,6 +84,10 @@ public class SecurityConfig {
                     .permitAll()
                     .requestMatchers(HttpMethod.GET, "/api/stats/**")
                     .permitAll()
+                    .requestMatchers("/api/admin/notices/**")
+                    .hasRole("OWNER")
+                    .requestMatchers("/api/admin/**")
+                    .hasAnyRole("ADMIN", "OWNER")
                     .anyRequest()
                     .authenticated())
         .oauth2Login(

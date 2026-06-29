@@ -111,7 +111,10 @@ class AuthControllerTest {
                 0L,
                 true,
                 "LOCAL",
-                false),
+                false,
+                "USER",
+                "ACTIVE",
+                null),
             "AT",
             "RT");
     given(authService.signup(any(SignupRequest.class))).willReturn(response);

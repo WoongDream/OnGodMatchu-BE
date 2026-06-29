@@ -26,6 +26,7 @@ import com.ongodmatchu.global.exception.ErrorCode;
 import com.ongodmatchu.infra.s3.S3Service;
 import com.ongodmatchu.infra.s3.ViewUrlResponse;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -36,6 +37,10 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
@@ -205,5 +210,44 @@ class QuizCommentServiceTest {
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.COMMENT_NOT_FOUND);
+  }
+
+  @Test
+  @DisplayName("list_활성작성자_authorPublicId노출")
+  void list_activeAuthor_exposesPublicId() {
+    User owner = testUser(1L);
+    User author = testUser(2L);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    QuizComment comment = savedComment(quiz, author, "활성 작성자 댓글");
+    Pageable pageable = PageRequest.of(0, 10);
+    given(quizRepository.findById(10L)).willReturn(Optional.of(quiz));
+    given(commentRepository.findByQuizIdAndDeletedAtIsNullOrderByCreatedAtDesc(10L, pageable))
+        .willReturn(new PageImpl<>(List.of(comment), pageable, 1));
+
+    Page<CommentResponse> page = commentService.list(2L, 10L, pageable);
+
+    CommentResponse response = page.getContent().get(0);
+    assertThat(response.authorPublicId()).isEqualTo(author.getPublicId());
+    assertThat(response.authorNickname()).isEqualTo("user2");
+  }
+
+  @Test
+  @DisplayName("list_탈퇴작성자_authorPublicId_null_닉네임마스킹")
+  void list_withdrawnAuthor_masksPublicIdAndNickname() {
+    User owner = testUser(1L);
+    User author = testUser(2L);
+    ReflectionTestUtils.setField(author, "isActive", false);
+    Quiz quiz = testQuiz(owner, QuizVisibility.PUBLIC);
+    QuizComment comment = savedComment(quiz, author, "탈퇴 작성자 댓글");
+    Pageable pageable = PageRequest.of(0, 10);
+    given(quizRepository.findById(10L)).willReturn(Optional.of(quiz));
+    given(commentRepository.findByQuizIdAndDeletedAtIsNullOrderByCreatedAtDesc(10L, pageable))
+        .willReturn(new PageImpl<>(List.of(comment), pageable, 1));
+
+    Page<CommentResponse> page = commentService.list(2L, 10L, pageable);
+
+    CommentResponse response = page.getContent().get(0);
+    assertThat(response.authorPublicId()).isNull();
+    assertThat(response.authorNickname()).isEqualTo("탈퇴한 사용자");
   }
 }

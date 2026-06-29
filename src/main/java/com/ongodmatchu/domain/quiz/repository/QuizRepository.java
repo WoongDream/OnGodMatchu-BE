@@ -12,10 +12,29 @@ import org.springframework.data.repository.query.Param;
 
 public interface QuizRepository extends JpaRepository<Quiz, Long> {
 
-  Page<Quiz> findByCategoryAndVisibility(
-      String category, QuizVisibility visibility, Pageable pageable);
-
-  Page<Quiz> findByVisibility(QuizVisibility visibility, Pageable pageable);
+  /**
+   * 메인 공개 목록 — visibility 한정 + 카테고리(옵션) + 제목 부분검색(옵션). 정렬은 Pageable 위임 (인기순 playCount,createdAt
+   * DESC / 최신순 createdAt DESC). category·title 모두 null 이면 전체 PUBLIC. null bind 시 PostgreSQL bytea
+   * 추론 오류를 CAST(... AS string) 으로 회피.
+   */
+  @Query(
+      value =
+          "SELECT q FROM Quiz q "
+              + "WHERE q.visibility = :visibility "
+              + "AND (CAST(:category AS string) IS NULL OR q.category = CAST(:category AS string)) "
+              + "AND (CAST(:title AS string) IS NULL "
+              + "OR LOWER(q.title) LIKE LOWER(CONCAT('%', CAST(:title AS string), '%')))",
+      countQuery =
+          "SELECT COUNT(q) FROM Quiz q "
+              + "WHERE q.visibility = :visibility "
+              + "AND (CAST(:category AS string) IS NULL OR q.category = CAST(:category AS string)) "
+              + "AND (CAST(:title AS string) IS NULL "
+              + "OR LOWER(q.title) LIKE LOWER(CONCAT('%', CAST(:title AS string), '%')))")
+  Page<Quiz> searchPublic(
+      @Param("visibility") QuizVisibility visibility,
+      @Param("category") String category,
+      @Param("title") String title,
+      Pageable pageable);
 
   Page<Quiz> findByUserIdOrderByCreatedAtDesc(Long userId, Pageable pageable);
 
@@ -34,6 +53,17 @@ public interface QuizRepository extends JpaRepository<Quiz, Long> {
           + "COALESCE(SUM(q.shareCount), 0) AS shares "
           + "FROM Quiz q WHERE q.user.id = :userId")
   QuizAggregateRow aggregateByUserId(@Param("userId") Long userId);
+
+  /** 타인 시점 프로필 요약용 — visibility 한정 집계 (PUBLIC 만 넘겨 비공개 퀴즈 제외). */
+  @Query(
+      "SELECT COUNT(q) AS quizCount, "
+          + "COALESCE(SUM(q.playCount), 0) AS plays, "
+          + "COALESCE(SUM(q.starCount), 0) AS stars, "
+          + "COALESCE(SUM(q.commentCount), 0) AS comments, "
+          + "COALESCE(SUM(q.shareCount), 0) AS shares "
+          + "FROM Quiz q WHERE q.user.id = :userId AND q.visibility = :visibility")
+  QuizAggregateRow aggregateByUserIdAndVisibility(
+      @Param("userId") Long userId, @Param("visibility") QuizVisibility visibility);
 
   /**
    * 회원탈퇴 시 본인 소유 퀴즈를 시스템 관리자 계정으로 일괄 이전.

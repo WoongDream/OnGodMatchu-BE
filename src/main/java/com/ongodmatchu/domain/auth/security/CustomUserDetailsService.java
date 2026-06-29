@@ -38,9 +38,9 @@ public class CustomUserDetailsService implements UserDetailsService {
     return new CustomUserDetails(user);
   }
 
-  /** 탈퇴/시스템 유저는 인증 단계에서 차단 — 토큰이 살아있어도 401. */
+  /** 탈퇴 유저는 인증 단계에서 차단 — 토큰이 살아있어도 401. (시스템 계정은 OWNER 로 승격되어 로그인 허용) */
   private void ensureActive(User user) {
-    if (!user.isActive() || user.isSystem()) {
+    if (!user.isActive()) {
       throw new BusinessException(ErrorCode.UNAUTHORIZED);
     }
   }

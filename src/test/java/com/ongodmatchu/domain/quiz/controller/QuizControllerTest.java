@@ -127,13 +127,13 @@ class QuizControllerTest {
   @Test
   @DisplayName("getQuizList_기본정렬_playCount_DESC_그리고_createdAt_DESC_tiebreaker")
   void getQuizList_defaultSort_playCountDescThenCreatedAtDesc() throws Exception {
-    given(quizService.getQuizList(any(), any(), any(Pageable.class)))
+    given(quizService.getQuizList(any(), any(), any(), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of(sampleQuizResponse)));
 
     mockMvc.perform(get("/api/quizzes")).andExpect(status().isOk());
 
     ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
-    then(quizService).should().getQuizList(any(), any(), captor.capture());
+    then(quizService).should().getQuizList(any(), any(), any(), captor.capture());
     Pageable captured = captor.getValue();
     List<Sort.Order> orders = captured.getSort().toList();
     assertThat(orders).hasSize(2);
@@ -144,37 +144,75 @@ class QuizControllerTest {
   }
 
   @Test
+  @DisplayName("getQuizList_최신순_sort_createdAt_desc_전달")
+  void getQuizList_latestSort_createdAtDescForwarded() throws Exception {
+    given(quizService.getQuizList(any(), any(), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc.perform(get("/api/quizzes").param("sort", "createdAt,desc")).andExpect(status().isOk());
+
+    ArgumentCaptor<Pageable> captor = ArgumentCaptor.forClass(Pageable.class);
+    then(quizService).should().getQuizList(any(), any(), any(), captor.capture());
+    List<Sort.Order> orders = captor.getValue().getSort().toList();
+    assertThat(orders).hasSize(1);
+    assertThat(orders.get(0).getProperty()).isEqualTo("createdAt");
+    assertThat(orders.get(0).getDirection()).isEqualTo(Sort.Direction.DESC);
+  }
+
+  @Test
   @DisplayName("getQuizList_비로그인_viewerId_null_전달")
   void getQuizList_anonymousViewer_passesNullViewerId() throws Exception {
     SecurityContextHolder.clearContext();
-    given(quizService.getQuizList(any(), any(), any(Pageable.class)))
+    given(quizService.getQuizList(any(), any(), any(), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of()));
 
     mockMvc.perform(get("/api/quizzes")).andExpect(status().isOk());
 
-    then(quizService).should().getQuizList(isNull(), isNull(), any(Pageable.class));
+    then(quizService).should().getQuizList(isNull(), isNull(), isNull(), any(Pageable.class));
   }
 
   @Test
   @DisplayName("getQuizList_인증사용자_viewerId_전달")
   void getQuizList_authenticated_passesViewerId() throws Exception {
-    given(quizService.getQuizList(any(), any(), any(Pageable.class)))
+    given(quizService.getQuizList(any(), any(), any(), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of()));
 
     mockMvc.perform(get("/api/quizzes")).andExpect(status().isOk());
 
-    then(quizService).should().getQuizList(isNull(), eq(1L), any(Pageable.class));
+    then(quizService).should().getQuizList(isNull(), isNull(), eq(1L), any(Pageable.class));
   }
 
   @Test
   @DisplayName("getQuizList_category파라미터_그대로_전달")
   void getQuizList_categoryParam_forwarded() throws Exception {
-    given(quizService.getQuizList(eq("music"), any(), any(Pageable.class)))
+    given(quizService.getQuizList(eq("music"), any(), any(), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of()));
 
     mockMvc.perform(get("/api/quizzes").param("category", "music")).andExpect(status().isOk());
 
-    then(quizService).should().getQuizList(eq("music"), eq(1L), any(Pageable.class));
+    then(quizService).should().getQuizList(eq("music"), isNull(), eq(1L), any(Pageable.class));
+  }
+
+  @Test
+  @DisplayName("getQuizList_q파라미터_서비스로_전달")
+  void getQuizList_qParam_forwarded() throws Exception {
+    given(quizService.getQuizList(any(), eq("마리오"), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc.perform(get("/api/quizzes").param("q", "마리오")).andExpect(status().isOk());
+
+    then(quizService).should().getQuizList(isNull(), eq("마리오"), eq(1L), any(Pageable.class));
+  }
+
+  @Test
+  @DisplayName("getQuizList_q미지정_null_전달")
+  void getQuizList_qNotProvided_passesNull() throws Exception {
+    given(quizService.getQuizList(any(), any(), any(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc.perform(get("/api/quizzes")).andExpect(status().isOk());
+
+    then(quizService).should().getQuizList(isNull(), isNull(), eq(1L), any(Pageable.class));
   }
 
   // ============ GET /api/quizzes/{quizId}/score-distribution ============

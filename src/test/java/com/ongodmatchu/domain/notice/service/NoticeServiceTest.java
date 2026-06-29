@@ -2,209 +2,157 @@ package com.ongodmatchu.domain.notice.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 
-import com.ongodmatchu.domain.notice.document.NoticeDocument;
 import com.ongodmatchu.domain.notice.dto.NoticeDetailResponse;
 import com.ongodmatchu.domain.notice.dto.NoticeListItemResponse;
-import com.ongodmatchu.domain.notice.loader.NoticeMarkdownLoader;
+import com.ongodmatchu.domain.notice.entity.Notice;
+import com.ongodmatchu.domain.notice.entity.NoticeStatus;
+import com.ongodmatchu.domain.notice.repository.NoticeRepository;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
-import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.Captor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @ExtendWith(MockitoExtension.class)
 class NoticeServiceTest {
 
   @InjectMocks private NoticeService noticeService;
-  @Mock private NoticeMarkdownLoader loader;
+  @Mock private NoticeRepository noticeRepository;
+  @Captor private ArgumentCaptor<Pageable> pageableCaptor;
 
-  private NoticeDocument doc(String slug, String title, LocalDate publishedAt) {
-    return new NoticeDocument(slug, title, "## " + title + "\n\n본문 " + slug, publishedAt);
+  private Notice buildNotice(Long id, String title, NoticeStatus status, boolean pinned) {
+    Notice notice =
+        Notice.builder().title(title).content(title + " 본문").status(status).pinned(pinned).build();
+    ReflectionTestUtils.setField(notice, "id", id);
+    return notice;
   }
 
   // ============ getAnnouncements ============
 
   @Test
-  @DisplayName("getAnnouncements_정상_NoticeListItemResponse매핑")
-  void getAnnouncements_success_mapsToResponse() {
-    NoticeDocument d = doc("service-open", "공지 제목", LocalDate.of(2026, 1, 1));
-    given(loader.findAllAnnouncements()).willReturn(List.of(d));
+  @DisplayName("getAnnouncements_게시공지를_ListItemResponse로_매핑한다")
+  void getAnnouncements_mapsToResponse() {
+    Notice notice = buildNotice(1L, "게시 공지", NoticeStatus.PUBLISHED, true);
+    notice.increaseViewCount();
+    given(
+            noticeRepository.findByStatusOrderByPinnedDescPublishedAtDesc(
+                eq(NoticeStatus.PUBLISHED), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of(notice)));
 
-    Page<NoticeListItemResponse> result = noticeService.getAnnouncements(PageRequest.of(0, 20));
+    Page<NoticeListItemResponse> result = noticeService.getAnnouncements(PageRequest.of(0, 10));
 
-    assertThat(result.getContent()).hasSize(1);
+    assertThat(result.getTotalElements()).isEqualTo(1L);
     NoticeListItemResponse item = result.getContent().get(0);
-    assertThat(item.slug()).isEqualTo("service-open");
-    assertThat(item.title()).isEqualTo("공지 제목");
-    assertThat(item.publishedAt()).isNotNull();
-    assertThat(result.getTotalElements()).isEqualTo(1);
+    assertThat(item.id()).isEqualTo(1L);
+    assertThat(item.title()).isEqualTo("게시 공지");
+    assertThat(item.pinned()).isTrue();
+    assertThat(item.viewCount()).isEqualTo(1L);
   }
 
   @Test
-  @DisplayName("getAnnouncements_size100요청_50으로cap")
-  void getAnnouncements_pageSize_cappedAt50() {
-    List<NoticeDocument> docs =
-        java.util.stream.IntStream.range(0, 60)
-            .mapToObj(i -> doc("slug-" + i, "제목 " + i, LocalDate.of(2026, 1, 1).minusDays(i)))
-            .toList();
-    given(loader.findAllAnnouncements()).willReturn(docs);
+  @DisplayName("getAnnouncements_게시공지없으면_빈페이지")
+  void getAnnouncements_empty() {
+    given(
+            noticeRepository.findByStatusOrderByPinnedDescPublishedAtDesc(
+                eq(NoticeStatus.PUBLISHED), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
 
-    Page<NoticeListItemResponse> result = noticeService.getAnnouncements(PageRequest.of(0, 100));
-
-    assertThat(result.getSize()).isEqualTo(50);
-    assertThat(result.getContent()).hasSize(50);
-    assertThat(result.getTotalElements()).isEqualTo(60);
-  }
-
-  @Test
-  @DisplayName("getAnnouncements_size_0_20으로디폴트")
-  void getAnnouncements_pageSize_zero_defaultsTo20() {
-    given(loader.findAllAnnouncements()).willReturn(List.of());
-
-    Page<NoticeListItemResponse> result = noticeService.getAnnouncements(zeroSizePageable());
-
-    assertThat(result.getSize()).isEqualTo(20);
-  }
-
-  @Test
-  @DisplayName("getAnnouncements_size_5_정상범위_그대로유지")
-  void getAnnouncements_pageSize_withinRange_keepsAsIs() {
-    given(loader.findAllAnnouncements()).willReturn(List.of());
-
-    Page<NoticeListItemResponse> result = noticeService.getAnnouncements(PageRequest.of(0, 5));
-
-    assertThat(result.getSize()).isEqualTo(5);
-  }
-
-  @Test
-  @DisplayName("getAnnouncements_2페이지_offset맞춰_슬라이스")
-  void getAnnouncements_secondPage_slicesByOffset() {
-    List<NoticeDocument> docs =
-        List.of(
-            doc("d1", "1", LocalDate.of(2026, 1, 5)),
-            doc("d2", "2", LocalDate.of(2026, 1, 4)),
-            doc("d3", "3", LocalDate.of(2026, 1, 3)),
-            doc("d4", "4", LocalDate.of(2026, 1, 2)),
-            doc("d5", "5", LocalDate.of(2026, 1, 1)));
-    given(loader.findAllAnnouncements()).willReturn(docs);
-
-    Page<NoticeListItemResponse> page2 = noticeService.getAnnouncements(PageRequest.of(1, 2));
-
-    assertThat(page2.getContent())
-        .extracting(NoticeListItemResponse::slug)
-        .containsExactly("d3", "d4");
-    assertThat(page2.getTotalElements()).isEqualTo(5);
-    assertThat(page2.getNumber()).isEqualTo(1);
-  }
-
-  @Test
-  @DisplayName("getAnnouncements_빈리스트_빈페이지")
-  void getAnnouncements_emptyLoader_returnsEmptyPage() {
-    given(loader.findAllAnnouncements()).willReturn(List.of());
-
-    Page<NoticeListItemResponse> result = noticeService.getAnnouncements(PageRequest.of(0, 20));
+    Page<NoticeListItemResponse> result = noticeService.getAnnouncements(PageRequest.of(0, 10));
 
     assertThat(result.getContent()).isEmpty();
-    assertThat(result.getTotalElements()).isZero();
   }
 
   @Test
-  @DisplayName("getAnnouncements_offset_total초과_빈콘텐츠")
-  void getAnnouncements_offsetBeyondTotal_returnsEmptyContent() {
-    given(loader.findAllAnnouncements())
-        .willReturn(List.of(doc("only", "1", LocalDate.of(2026, 1, 1))));
+  @DisplayName("getAnnouncements_size가50초과면_50으로_cap한다")
+  void getAnnouncements_capsPageSizeAt50() {
+    given(
+            noticeRepository.findByStatusOrderByPinnedDescPublishedAtDesc(
+                eq(NoticeStatus.PUBLISHED), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
 
-    Page<NoticeListItemResponse> page = noticeService.getAnnouncements(PageRequest.of(5, 20));
+    noticeService.getAnnouncements(PageRequest.of(2, 100));
 
-    assertThat(page.getContent()).isEmpty();
-    assertThat(page.getTotalElements()).isEqualTo(1);
+    verify(noticeRepository)
+        .findByStatusOrderByPinnedDescPublishedAtDesc(
+            eq(NoticeStatus.PUBLISHED), pageableCaptor.capture());
+    Pageable used = pageableCaptor.getValue();
+    assertThat(used.getPageSize()).isEqualTo(50);
+    assertThat(used.getPageNumber()).isEqualTo(2);
+  }
+
+  @Test
+  @DisplayName("getAnnouncements_size가50이하면_요청값을_그대로_사용한다")
+  void getAnnouncements_keepsPageSizeWhenWithinLimit() {
+    given(
+            noticeRepository.findByStatusOrderByPinnedDescPublishedAtDesc(
+                eq(NoticeStatus.PUBLISHED), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    noticeService.getAnnouncements(PageRequest.of(0, 20));
+
+    verify(noticeRepository)
+        .findByStatusOrderByPinnedDescPublishedAtDesc(
+            eq(NoticeStatus.PUBLISHED), pageableCaptor.capture());
+    assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(20);
   }
 
   // ============ getAnnouncementDetail ============
 
   @Test
-  @DisplayName("getAnnouncementDetail_정상_NoticeDetailResponse매핑")
-  void getAnnouncementDetail_success_mapsToResponse() {
-    NoticeDocument d = doc("service-open", "공지 제목", LocalDate.of(2026, 1, 1));
-    given(loader.findAnnouncementBySlug("service-open")).willReturn(Optional.of(d));
+  @DisplayName("getAnnouncementDetail_게시공지_조회수증가후_DetailResponse반환")
+  void getAnnouncementDetail_published_increasesViewCount() {
+    Notice notice = buildNotice(1L, "게시 공지", NoticeStatus.PUBLISHED, false);
+    given(noticeRepository.findById(1L)).willReturn(Optional.of(notice));
 
-    NoticeDetailResponse result = noticeService.getAnnouncementDetail("service-open");
+    NoticeDetailResponse result = noticeService.getAnnouncementDetail(1L);
 
-    assertThat(result.slug()).isEqualTo("service-open");
-    assertThat(result.title()).isEqualTo("공지 제목");
-    assertThat(result.content()).contains("본문 service-open");
-    assertThat(result.publishedAt()).isNotNull();
+    assertThat(result.id()).isEqualTo(1L);
+    assertThat(result.title()).isEqualTo("게시 공지");
+    assertThat(result.content()).isEqualTo("게시 공지 본문");
+    assertThat(result.viewCount()).isEqualTo(1L);
+    assertThat(notice.getViewCount()).isEqualTo(1L);
   }
 
   @Test
-  @DisplayName("getAnnouncementDetail_loader_empty_NOTICE_NOT_FOUND예외")
-  void getAnnouncementDetail_notFound_throwsBusinessException() {
-    given(loader.findAnnouncementBySlug("missing")).willReturn(Optional.empty());
+  @DisplayName("getAnnouncementDetail_DRAFT공지는_NOTICE_NOT_FOUND_조회수증가안함")
+  void getAnnouncementDetail_draft_throwsNotFound() {
+    Notice draft = buildNotice(1L, "임시저장", NoticeStatus.DRAFT, false);
+    given(noticeRepository.findById(1L)).willReturn(Optional.of(draft));
 
-    assertThatThrownBy(() -> noticeService.getAnnouncementDetail("missing"))
+    assertThatThrownBy(() -> noticeService.getAnnouncementDetail(1L))
         .isInstanceOf(BusinessException.class)
-        .extracting("errorCode")
+        .extracting(e -> ((BusinessException) e).getErrorCode())
         .isEqualTo(ErrorCode.NOTICE_NOT_FOUND);
+    assertThat(draft.getViewCount()).isZero();
   }
 
-  private static Pageable zeroSizePageable() {
-    return new Pageable() {
-      @Override
-      public int getPageNumber() {
-        return 0;
-      }
+  @Test
+  @DisplayName("getAnnouncementDetail_없는id면_NOTICE_NOT_FOUND")
+  void getAnnouncementDetail_notFound_throws() {
+    given(noticeRepository.findById(999L)).willReturn(Optional.empty());
 
-      @Override
-      public int getPageSize() {
-        return 0;
-      }
-
-      @Override
-      public long getOffset() {
-        return 0;
-      }
-
-      @Override
-      public Sort getSort() {
-        return Sort.unsorted();
-      }
-
-      @Override
-      public Pageable next() {
-        return this;
-      }
-
-      @Override
-      public Pageable previousOrFirst() {
-        return this;
-      }
-
-      @Override
-      public Pageable first() {
-        return this;
-      }
-
-      @Override
-      public Pageable withPage(int pageNumber) {
-        return this;
-      }
-
-      @Override
-      public boolean hasPrevious() {
-        return false;
-      }
-    };
+    assertThatThrownBy(() -> noticeService.getAnnouncementDetail(999L))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NOTICE_NOT_FOUND);
+    verify(noticeRepository, never()).save(any());
   }
 }
