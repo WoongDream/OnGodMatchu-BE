@@ -3,12 +3,15 @@ package com.ongodmatchu.domain.user.controller;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willDoNothing;
+import static org.mockito.BDDMockito.willThrow;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -17,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.ongodmatchu.domain.auth.security.CustomUserDetails;
 import com.ongodmatchu.domain.quiz.dto.AttemptListItemResponse;
 import com.ongodmatchu.domain.quiz.dto.MyQuizListItemResponse;
+import com.ongodmatchu.domain.quiz.dto.QuizResponse;
 import com.ongodmatchu.domain.quiz.dto.QuizSort;
 import com.ongodmatchu.domain.quiz.dto.VisibilityFilter;
 import com.ongodmatchu.domain.quiz.entity.QuizVisibility;
@@ -24,6 +28,7 @@ import com.ongodmatchu.domain.quiz.service.QuizAttemptService;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
+import com.ongodmatchu.domain.user.dto.PublicProfileSummaryResponse;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
@@ -32,6 +37,9 @@ import com.ongodmatchu.domain.user.entity.AuthProvider;
 import com.ongodmatchu.domain.user.entity.User;
 import com.ongodmatchu.domain.user.service.UserService;
 import com.ongodmatchu.domain.user.service.WithdrawalCodeService;
+import com.ongodmatchu.global.exception.BusinessException;
+import com.ongodmatchu.global.exception.ErrorCode;
+import com.ongodmatchu.global.exception.RateLimitException;
 import com.ongodmatchu.infra.s3.PresignedUrlRequest;
 import com.ongodmatchu.infra.s3.PresignedUrlResponse;
 import java.time.OffsetDateTime;
@@ -109,7 +117,10 @@ class UserControllerTest {
             100L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
   }
 
   @AfterEach
@@ -155,7 +166,10 @@ class UserControllerTest {
             100L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
     given(userService.getMe(1L)).willReturn(withTransform);
 
     mockMvc
@@ -240,7 +254,10 @@ class UserControllerTest {
             10L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
     given(userService.getProfile(eq(publicId), eq(null))).willReturn(anonResponse);
 
     // SecurityContext 비워서 비로그인 시뮬레이션
@@ -250,6 +267,70 @@ class UserControllerTest {
         .perform(get("/api/users/{publicId}", publicId))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
+  }
+
+  // ============ GET /api/users/{publicId}/profile/summary ============
+
+  @Test
+  @DisplayName("getProfileSummary_정상_200_식별정보와통계반환")
+  void getProfileSummary_returns200WithIdentityAndStats() throws Exception {
+    UUID publicId = UUID.fromString("00000000-0000-0000-0000-000000000009");
+    PublicProfileSummaryResponse summary =
+        new PublicProfileSummaryResponse(
+            publicId,
+            "요약유저",
+            "https://cdn.example.com/default.png",
+            "안녕하세요",
+            true,
+            8L,
+            75.5,
+            4L,
+            120L,
+            30L,
+            "OWNER");
+    given(userService.getProfileSummary(eq(publicId))).willReturn(summary);
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/profile/summary", publicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.nickname").value("요약유저"))
+        .andExpect(jsonPath("$.data.isProfilePublic").value(true))
+        .andExpect(jsonPath("$.data.solvedCount").value(8))
+        .andExpect(jsonPath("$.data.avgSolveRate").value(75.5))
+        .andExpect(jsonPath("$.data.quizCount").value(4))
+        .andExpect(jsonPath("$.data.totalPlayCount").value(120))
+        .andExpect(jsonPath("$.data.totalStarCount").value(30))
+        .andExpect(jsonPath("$.data.role").value("OWNER"));
+  }
+
+  @Test
+  @DisplayName("getProfileSummary_비로그인뷰어_200반환")
+  void getProfileSummary_anonymousViewer_returns200() throws Exception {
+    UUID publicId = UUID.fromString("00000000-0000-0000-0000-00000000000a");
+    PublicProfileSummaryResponse summary =
+        new PublicProfileSummaryResponse(
+            publicId,
+            "비공개유저",
+            "https://cdn.example.com/default.png",
+            null,
+            false,
+            0L,
+            null,
+            0L,
+            0L,
+            0L,
+            "USER");
+    given(userService.getProfileSummary(eq(publicId))).willReturn(summary);
+
+    SecurityContextHolder.clearContext();
+
+    mockMvc
+        .perform(get("/api/users/{publicId}/profile/summary", publicId))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.isProfilePublic").value(false))
+        .andExpect(jsonPath("$.data.role").value("USER"));
   }
 
   // ============ PATCH /api/users/me ============
@@ -272,7 +353,10 @@ class UserControllerTest {
             100L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
     given(userService.updateMe(eq(1L), any(UserUpdateRequest.class))).willReturn(updated);
 
     mockMvc
@@ -364,6 +448,81 @@ class UserControllerTest {
         .perform(post("/api/users/me/withdrawal-code"))
         .andExpect(status().isOk())
         .andExpect(jsonPath("$.success").value(true));
+  }
+
+  // ============ POST /api/users/me/withdrawal-code/verify (코드 dry-run 검증) ============
+
+  @Test
+  @DisplayName("verifyWithdrawalCode_정상_200반환_서비스위임")
+  void verifyWithdrawalCode_returns200() throws Exception {
+    String body = "{\"verificationCode\":\"123456\"}";
+    willDoNothing().given(withdrawalCodeService).verify(eq(1L), eq("123456"), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/users/me/withdrawal-code/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    org.mockito.Mockito.verify(withdrawalCodeService).verify(eq(1L), eq("123456"), anyString());
+  }
+
+  @Test
+  @DisplayName("verifyWithdrawalCode_잘못된코드_400_INVALID_VERIFICATION_CODE")
+  void verifyWithdrawalCode_invalidCode_returns400() throws Exception {
+    String body = "{\"verificationCode\":\"000000\"}";
+    willThrow(new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE))
+        .given(withdrawalCodeService)
+        .verify(eq(1L), eq("000000"), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/users/me/withdrawal-code/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("INVALID_VERIFICATION_CODE"));
+  }
+
+  @Test
+  @DisplayName("verifyWithdrawalCode_만료된코드_400_VERIFICATION_CODE_EXPIRED")
+  void verifyWithdrawalCode_expiredCode_returns400() throws Exception {
+    String body = "{\"verificationCode\":\"654321\"}";
+    willThrow(new BusinessException(ErrorCode.VERIFICATION_CODE_EXPIRED))
+        .given(withdrawalCodeService)
+        .verify(eq(1L), eq("654321"), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/users/me/withdrawal-code/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isBadRequest())
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("VERIFICATION_CODE_EXPIRED"));
+  }
+
+  @Test
+  @DisplayName("verifyWithdrawalCode_시도횟수초과_429_RATE_LIMITED_retryAfter헤더포함")
+  void verifyWithdrawalCode_rateLimited_returns429WithRetryAfter() throws Exception {
+    String body = "{\"verificationCode\":\"123456\"}";
+    willThrow(new RateLimitException(60))
+        .given(withdrawalCodeService)
+        .verify(eq(1L), eq("123456"), anyString());
+
+    mockMvc
+        .perform(
+            post("/api/users/me/withdrawal-code/verify")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(body))
+        .andExpect(status().isTooManyRequests())
+        .andExpect(header().string("Retry-After", "60"))
+        .andExpect(jsonPath("$.success").value(false))
+        .andExpect(jsonPath("$.error.code").value("RATE_LIMITED"))
+        .andExpect(jsonPath("$.error.retryAfter").value(60));
   }
 
   @Test
@@ -531,7 +690,10 @@ class UserControllerTest {
             100L,
             true,
             "LOCAL",
-            false);
+            false,
+            "USER",
+            "ACTIVE",
+            null);
     given(userService.deleteProfileImage(1L)).willReturn(responseAfterDelete);
 
     mockMvc
@@ -594,6 +756,77 @@ class UserControllerTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.content").isArray())
         .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  // ============ GET /api/users/me/stars ============
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_인증된유저_200_Page반환_isStarred true")
+  void getMyStarredQuizzes_authenticated_returns200WithPage() throws Exception {
+    QuizResponse item =
+        new QuizResponse(
+            50L,
+            UUID.fromString("00000000-0000-0000-0000-000000000050"),
+            "스타한 퀴즈",
+            "재밌는 퀴즈",
+            "game",
+            "thumbnails/star.png",
+            "https://cdn.example.com/star.png",
+            15,
+            7,
+            3,
+            2,
+            true,
+            66.6,
+            QuizVisibility.PUBLIC,
+            "작성자",
+            OffsetDateTime.of(2025, 2, 1, 0, 0, 0, 0, ZoneOffset.of("+09:00")));
+    Page<QuizResponse> page = new PageImpl<>(List.of(item));
+    given(quizService.getMyStarredQuizzes(eq(1L), isNull(), any(Pageable.class))).willReturn(page);
+
+    mockMvc
+        .perform(get("/api/users/me/stars"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.content[0].title").value("스타한 퀴즈"))
+        .andExpect(jsonPath("$.data.content[0].isStarred").value(true))
+        .andExpect(jsonPath("$.data.content[0].playCount").value(15))
+        .andExpect(jsonPath("$.data.content[0].starCount").value(7))
+        .andExpect(jsonPath("$.data.content[0].commentCount").value(3))
+        .andExpect(jsonPath("$.data.content[0].shareCount").value(2))
+        .andExpect(jsonPath("$.data.totalElements").value(1));
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_스타없음_빈페이지반환_200")
+  void getMyStarredQuizzes_noStars_returnsEmptyPage() throws Exception {
+    given(quizService.getMyStarredQuizzes(eq(1L), isNull(), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/me/stars"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true))
+        .andExpect(jsonPath("$.data.content").isArray())
+        .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  @Test
+  @DisplayName("getMyStarredQuizzes_title쿼리_서비스로전달_200")
+  void getMyStarredQuizzes_withTitle_forwardsTitleToService() throws Exception {
+    given(quizService.getMyStarredQuizzes(eq(1L), eq("bar"), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/me/stars").param("title", "bar"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    org.mockito.Mockito.verify(quizService)
+        .getMyStarredQuizzes(eq(1L), titleCaptor.capture(), any(Pageable.class));
+    org.assertj.core.api.Assertions.assertThat(titleCaptor.getValue()).isEqualTo("bar");
   }
 
   // ============ GET /api/users/{publicId}/quizzes ============
@@ -701,12 +934,19 @@ class UserControllerTest {
             "게임",
             null,
             null,
+            7,
+            2,
+            1,
+            0,
             4,
             5,
             80.0,
+            null,
+            null,
+            1L,
             OffsetDateTime.of(2025, 5, 1, 12, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
-    given(quizAttemptService.getMyAttempts(eq(1L), any(Pageable.class))).willReturn(page);
+    given(quizAttemptService.getMyAttempts(eq(1L), isNull(), any(Pageable.class))).willReturn(page);
 
     mockMvc
         .perform(get("/api/users/me/attempts"))
@@ -724,7 +964,7 @@ class UserControllerTest {
   @Test
   @DisplayName("getMyAttempts_풀이기록없음_200_빈페이지반환")
   void getMyAttempts_noAttempts_returnsEmptyPage() throws Exception {
-    given(quizAttemptService.getMyAttempts(eq(1L), any(Pageable.class)))
+    given(quizAttemptService.getMyAttempts(eq(1L), isNull(), any(Pageable.class)))
         .willReturn(new PageImpl<>(List.of()));
 
     mockMvc
@@ -733,6 +973,23 @@ class UserControllerTest {
         .andExpect(jsonPath("$.success").value(true))
         .andExpect(jsonPath("$.data.content").isArray())
         .andExpect(jsonPath("$.data.totalElements").value(0));
+  }
+
+  @Test
+  @DisplayName("getMyAttempts_title쿼리_서비스로전달_200")
+  void getMyAttempts_withTitle_forwardsTitleToService() throws Exception {
+    given(quizAttemptService.getMyAttempts(eq(1L), eq("foo"), any(Pageable.class)))
+        .willReturn(new PageImpl<>(List.of()));
+
+    mockMvc
+        .perform(get("/api/users/me/attempts").param("title", "foo"))
+        .andExpect(status().isOk())
+        .andExpect(jsonPath("$.success").value(true));
+
+    ArgumentCaptor<String> titleCaptor = ArgumentCaptor.forClass(String.class);
+    org.mockito.Mockito.verify(quizAttemptService)
+        .getMyAttempts(eq(1L), titleCaptor.capture(), any(Pageable.class));
+    org.assertj.core.api.Assertions.assertThat(titleCaptor.getValue()).isEqualTo("foo");
   }
 
   // ============ GET /api/users/{publicId}/attempts ============
@@ -751,9 +1008,16 @@ class UserControllerTest {
             "음악",
             null,
             null,
+            12,
+            3,
+            1,
+            0,
             3,
             5,
             60.0,
+            null,
+            null,
+            1L,
             OffsetDateTime.of(2025, 4, 1, 10, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
     given(
@@ -802,9 +1066,16 @@ class UserControllerTest {
             "애니메이션",
             null,
             null,
+            20,
+            5,
+            2,
+            1,
             5,
             5,
             100.0,
+            null,
+            null,
+            1L,
             OffsetDateTime.of(2025, 3, 15, 9, 0, 0, 0, ZoneOffset.of("+09:00")));
     Page<AttemptListItemResponse> page = new PageImpl<>(List.of(item));
     given(quizAttemptService.getAttemptsByPublicId(eq(targetPublicId), eq(1L), any(Pageable.class)))

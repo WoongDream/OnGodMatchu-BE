@@ -31,6 +31,7 @@ public record QuizDetailResponse(
     @Schema(description = "평균 정답률 (0~100). 풀이 기록 0회면 null", nullable = true) Double correctRate,
     QuizVisibility visibility,
     String authorNickname,
+    @Schema(description = "작성자 publicId — 프로필 모달/공개 프로필 진입용") UUID authorPublicId,
     @Schema(description = "작성자 프로필 이미지 presigned URL. 작성자 현재 key 로 매번 presign", nullable = true)
         String authorProfileImageUrl,
     @Schema(description = "생성 시각 (ISO 8601 +09:00)") OffsetDateTime createdAt,
@@ -68,6 +69,7 @@ public record QuizDetailResponse(
         correctRate,
         quiz.getVisibility(),
         quiz.getUser().getNickname(),
+        quiz.getUser().getPublicId(),
         authorProfileImageUrl,
         TimeFormat.toResponse(quiz.getCreatedAt()),
         questions);

@@ -112,6 +112,79 @@ class VerificationCodeRateLimiterTest {
         .doesNotThrowAnyException();
   }
 
+  @Test
+  @DisplayName("검증_쿨다운_없음_연속_호출_한도직전까지_통과")
+  void verify_no_cooldown_consecutive_calls_until_limit() {
+    // 발송 check 와 달리 시간이 거의 안 흘러도 한도 직전(9회)까지 예외 없이 통과
+    assertThatCode(
+            () -> {
+              for (int i = 0; i < 9; i++) {
+                limiter.checkVerifyAttempt("a@example.com", "1.1.1.1", SIGNUP);
+              }
+            })
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("검증_동일_이메일_1시간_10회_초과_차단")
+  void verify_email_10_per_hour_then_blocked() {
+    for (int i = 0; i < 10; i++) {
+      limiter.checkVerifyAttempt("e@example.com", "1.1.1.1", SIGNUP);
+    }
+    assertThatThrownBy(() -> limiter.checkVerifyAttempt("e@example.com", "1.1.1.1", SIGNUP))
+        .isInstanceOf(RateLimitException.class);
+  }
+
+  @Test
+  @DisplayName("검증_동일_IP_1시간_20회_초과_차단_(이메일은_매번_다름)")
+  void verify_ip_20_per_hour_then_blocked() {
+    for (int i = 0; i < 20; i++) {
+      limiter.checkVerifyAttempt("user" + i + "@example.com", "9.9.9.9", SIGNUP);
+    }
+    assertThatThrownBy(() -> limiter.checkVerifyAttempt("user99@example.com", "9.9.9.9", SIGNUP))
+        .isInstanceOf(RateLimitException.class);
+  }
+
+  @Test
+  @DisplayName("검증_1시간_경과시_카운트_리셋")
+  void verify_window_resets_after_one_hour() {
+    for (int i = 0; i < 10; i++) {
+      limiter.checkVerifyAttempt("e@example.com", "1.1.1.1", SIGNUP);
+    }
+    // prune 은 윈도우보다 '이전' 기록만 제거하므로 정확히 1시간이 아니라 살짝 더 진행시켜야 리셋된다
+    clock.advance(Duration.ofHours(1).plusSeconds(1));
+    assertThatCode(() -> limiter.checkVerifyAttempt("e@example.com", "1.1.1.1", SIGNUP))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("발송_카운터와_분리_검증을_한도까지_채워도_발송_카운트_무관")
+  void verify_separate_from_send_counter() {
+    // 검증(checkVerifyAttempt) 을 이메일 한도(10회) 까지 가득 채운다
+    for (int i = 0; i < 10; i++) {
+      limiter.checkVerifyAttempt("e@example.com", "1.1.1.1", SIGNUP);
+    }
+    // 11회째 검증은 막히지만,
+    assertThatThrownBy(() -> limiter.checkVerifyAttempt("e@example.com", "1.1.1.1", SIGNUP))
+        .isInstanceOf(RateLimitException.class);
+    // 같은 email/purpose 의 발송 카운터는 별도 맵이라 영향 없음 — 발송은 통과
+    assertThatCode(() -> limiter.check("e@example.com", "1.1.1.1", SIGNUP))
+        .doesNotThrowAnyException();
+  }
+
+  @Test
+  @DisplayName("검증_IP_null_허용_(IP_제한_미적용_이메일만_집계)")
+  void verify_null_ip_skips_ip_check() {
+    // IP 집계를 건너뛰므로 서로 다른 이메일이면 IP 한도(20) 와 무관하게 통과
+    assertThatCode(
+            () -> {
+              for (int i = 0; i < 25; i++) {
+                limiter.checkVerifyAttempt("u" + i + "@example.com", null, SIGNUP);
+              }
+            })
+        .doesNotThrowAnyException();
+  }
+
   // 테스트용 mutable clock — Clock.fixed 는 advance 안 되니 직접 구현
   private static class MutableClock extends Clock {
     private Instant now;

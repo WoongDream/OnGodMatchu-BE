@@ -3,9 +3,12 @@ package com.ongodmatchu.domain.user.service;
 import com.ongodmatchu.domain.auth.repository.RefreshTokenRepository;
 import com.ongodmatchu.domain.auth.validation.PasswordValidator;
 import com.ongodmatchu.domain.auth.validation.TermsPolicy;
+import com.ongodmatchu.domain.nickname.service.ForbiddenNicknameService;
+import com.ongodmatchu.domain.quiz.dto.PublicProfileStats;
 import com.ongodmatchu.domain.quiz.service.QuizService;
 import com.ongodmatchu.domain.user.dto.PasswordChangeRequest;
 import com.ongodmatchu.domain.user.dto.ProfileImageUpdateRequest;
+import com.ongodmatchu.domain.user.dto.PublicProfileSummaryResponse;
 import com.ongodmatchu.domain.user.dto.PublicUserResponse;
 import com.ongodmatchu.domain.user.dto.UserResponse;
 import com.ongodmatchu.domain.user.dto.UserUpdateRequest;
@@ -45,6 +48,7 @@ public class UserService {
   private final UserRepository userRepository;
   private final NicknameNormalizer nicknameNormalizer;
   private final NicknamePolicy nicknamePolicy;
+  private final ForbiddenNicknameService forbiddenNicknameService;
   private final BioPolicy bioPolicy;
   private final PasswordEncoder passwordEncoder;
   private final PasswordValidator passwordValidator;
@@ -93,6 +97,36 @@ public class UserService {
         : UserResponse.from(user, resolveImageUrl(user), calcActiveDays(user.getCreatedAt()));
   }
 
+  /**
+   * 프로필 모달용 타인 프로필 요약. 식별 정보(닉네임/이미지/소개) + PUBLIC 기준 통계. 비공개 프로필도 통계는 노출 (FE 가 isProfilePublic 으로
+   * "프로필 보러가기" 버튼만 분기). 탈퇴(isActive=false)는 {@link ErrorCode#USER_NOT_FOUND}. 시스템('관리자') 계정은 모달 통계는
+   * 노출하되 isProfilePublic 을 false 로 강제해 "프로필 보러가기"/공개 프로필 페이지 진입은 차단한다.
+   */
+  @Transactional(readOnly = true)
+  public PublicProfileSummaryResponse getProfileSummary(UUID publicId) {
+    User user =
+        userRepository
+            .findByPublicId(publicId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    if (!user.isActive()) {
+      throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+    }
+
+    PublicProfileStats stats = quizService.getPublicProfileStats(user.getId());
+    return new PublicProfileSummaryResponse(
+        user.getPublicId(),
+        user.getNickname(),
+        resolveImageUrl(user),
+        user.getBio(),
+        user.isProfilePublic() && !user.isSystem(),
+        stats.solvedCount(),
+        stats.avgSolveRate(),
+        stats.quizCount(),
+        stats.totalPlayCount(),
+        stats.totalStarCount(),
+        user.getRole().name());
+  }
+
   @Transactional
   public UserResponse updateMe(Long userId, UserUpdateRequest request) {
     User user = findUserById(userId);
@@ -100,6 +134,7 @@ public class UserService {
     if (request.nickname() != null) {
       String nickname = nicknameNormalizer.normalize(request.nickname());
       nicknamePolicy.enforce(nickname);
+      forbiddenNicknameService.assertAllowed(nickname);
       if (!user.getNickname().equals(nickname) && userRepository.existsByNickname(nickname)) {
         throw new BusinessException(ErrorCode.NICKNAME_ALREADY_EXISTS);
       }
@@ -248,11 +283,15 @@ public class UserService {
 
     String anonymizedKey = "deleted_" + user.getPublicId();
     String previousImageKey = user.getProfileImageKey();
+    String previousOriginalImageKey = user.getOriginalProfileImageKey();
     user.withdraw(anonymizedKey + "@deleted.local", anonymizedKey);
 
     refreshTokenRepository.deleteByUserId(userId);
     if (previousImageKey != null) {
       s3Service.deleteQuietly(previousImageKey);
+    }
+    if (previousOriginalImageKey != null) {
+      s3Service.deleteQuietly(previousOriginalImageKey);
     }
   }
 

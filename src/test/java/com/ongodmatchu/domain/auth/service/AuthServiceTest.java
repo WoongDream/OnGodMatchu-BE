@@ -59,6 +59,9 @@ class AuthServiceTest {
   @Mock private com.ongodmatchu.domain.user.service.ProfileImageInitializer profileImageInitializer;
   @Mock private com.ongodmatchu.infra.s3.S3Service s3Service;
 
+  @Mock
+  private com.ongodmatchu.domain.nickname.service.ForbiddenNicknameService forbiddenNicknameService;
+
   private static EmailVerification validVerification(String email, String code) {
     return EmailVerification.builder()
         .email(email)
@@ -383,6 +386,29 @@ class AuthServiceTest {
     then(userRepository).should(never()).saveAndFlush(any());
   }
 
+  @Test
+  @DisplayName("회원가입_차단닉네임_NICKNAME_FORBIDDEN_saveAndFlush미호출")
+  void signup_forbiddenNickname_throws() {
+    given(userRepository.existsByEmail("user@example.com")).willReturn(false);
+    given(emailVerificationRepository.findTopByEmailOrderByCreatedAtDesc("user@example.com"))
+        .willReturn(Optional.of(validVerification("user@example.com", "123456")));
+    given(nicknameNormalizer.normalize("관리자")).willReturn("관리자");
+    willThrow(new BusinessException(ErrorCode.NICKNAME_FORBIDDEN))
+        .given(forbiddenNicknameService)
+        .assertAllowed("관리자");
+
+    assertThatThrownBy(
+            () ->
+                authService.signup(
+                    new SignupRequest(
+                        "user@example.com", "관리자", "password123", "123456", true, true, true)))
+        .isInstanceOf(BusinessException.class)
+        .extracting(e -> ((BusinessException) e).getErrorCode())
+        .isEqualTo(ErrorCode.NICKNAME_FORBIDDEN);
+
+    then(userRepository).should(never()).saveAndFlush(any());
+  }
+
   // ============ Login Tests ============
 
   @Test
@@ -417,8 +443,10 @@ class AuthServiceTest {
   }
 
   @Test
-  @DisplayName("로그인_시스템계정_USER_NOT_FOUND마스킹")
-  void login_systemAccount_throwsUserNotFound() {
+  @DisplayName("로그인_시스템계정_더이상_마스킹안함_비번검증단계_도달")
+  void login_systemAccount_noLongerMasked() {
+    // 시스템 계정은 OWNER 로 승격되어 로그인 차단 대상이 아니다. isSystem 만으로 USER_NOT_FOUND 마스킹되지 않고
+    // 비밀번호 검증 단계까지 진행된다 (여기선 비번 미설정이라 INVALID_PASSWORD).
     User systemUser =
         User.builder()
             .email("admin@system.local")
@@ -432,7 +460,7 @@ class AuthServiceTest {
     assertThatThrownBy(() -> authService.login(new LoginRequest("admin@system.local", "anything")))
         .isInstanceOf(BusinessException.class)
         .extracting(e -> ((BusinessException) e).getErrorCode())
-        .isEqualTo(ErrorCode.USER_NOT_FOUND);
+        .isEqualTo(ErrorCode.INVALID_PASSWORD);
   }
 
   @Test
@@ -679,5 +707,20 @@ class AuthServiceTest {
 
     assertThat(result.available()).isTrue();
     assertThat(result.reason()).isNull();
+  }
+
+  @Test
+  @DisplayName("checkNicknameAvailability_차단닉네임_forbidden_matched반환")
+  void checkNicknameAvailability_forbidden_returnsMatched() {
+    given(nicknameNormalizer.normalize("나는최고병신")).willReturn("나는최고병신");
+    given(nicknamePolicy.isValid("나는최고병신")).willReturn(true);
+    given(forbiddenNicknameService.findBlockedTerm("나는최고병신")).willReturn("병신");
+
+    NicknameAvailabilityResponse result = authService.checkNicknameAvailability("나는최고병신");
+
+    assertThat(result.available()).isFalse();
+    assertThat(result.reason()).isEqualTo(NicknameAvailabilityResponse.REASON_FORBIDDEN);
+    assertThat(result.matched()).isEqualTo("병신");
+    then(userRepository).should(never()).existsByNickname(anyString());
   }
 }

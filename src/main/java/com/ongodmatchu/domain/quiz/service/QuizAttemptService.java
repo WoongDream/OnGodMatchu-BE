@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -115,11 +116,14 @@ public class QuizAttemptService {
                 .quiz(quiz)
                 .score(score)
                 .totalQuestions(totalQuestions)
+                .timeLimitSec(request.timeLimitSec())
                 .build());
     Long attemptId = viewerUserId != null ? saved.getId() : null;
 
     Double percent = totalQuestions > 0 ? (score * 100.0 / totalQuestions) : null;
+    // 방금 저장한 attempt 를 포함한 분포로 산출 후, 풀이 당시 스냅샷으로 함께 기록.
     Double topPercentile = computeTopPercentile(quizId, score);
+    saved.assignTopPercentile(topPercentile);
     return new AttemptResultResponse(
         attemptId, score, totalQuestions, percent, topPercentile, results);
   }
@@ -179,16 +183,22 @@ public class QuizAttemptService {
     return Math.round(raw * 10.0) / 10.0;
   }
 
-  /** 내 풀이 기록 목록. completedAt DESC, size 디폴트 20 / 최대 50. */
+  /**
+   * 내 풀이 기록 목록 — 퀴즈 단위로 그룹화하여 quiz 당 최신 기록 1건 + 풀이 횟수. 최신 풀이 시각 DESC, size 디폴트 20 / 최대 50. title 이
+   * 주어지면 퀴즈 제목 부분일치 필터.
+   */
   @Transactional(readOnly = true)
-  public Page<AttemptListItemResponse> getMyAttempts(Long userId, Pageable pageable) {
+  public Page<AttemptListItemResponse> getMyAttempts(Long userId, String title, Pageable pageable) {
     Pageable effective = applyPageDefaults(pageable);
-    Page<QuizAttempt> page =
-        quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(userId, effective);
-    return mapToListItems(page);
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        quizAttemptRepository.findAttemptGroupsByUserId(userId, normalizeTitle(title), effective);
+    return mapGroupsToListItems(userId, groups, effective);
   }
 
-  /** 외부 뷰어 + 비공개 프로필 → 빈 페이지. 본인이거나 공개 프로필이면 정상 반환. */
+  /**
+   * 외부 뷰어 + 비공개 프로필 → 빈 페이지. 본인은 전체, 외부 뷰어는 PUBLIC 퀴즈 풀이만 (비공개 퀴즈는 타인에게 노출/통계 제외 — 본인이 자기 비공개 퀴즈를 푼
+   * 기록도 외부엔 안 보인다).
+   */
   @Transactional(readOnly = true)
   public Page<AttemptListItemResponse> getAttemptsByPublicId(
       UUID publicId, Long viewerUserId, Pageable pageable) {
@@ -201,20 +211,56 @@ public class QuizAttemptService {
     if (!author.isProfilePublic() && !isOwner) {
       return Page.empty(effective);
     }
-    Page<QuizAttempt> page =
-        quizAttemptRepository.findByUserIdOrderByCompletedAtDesc(author.getId(), effective);
-    return mapToListItems(page);
+    Page<QuizAttemptRepository.AttemptGroupRow> groups =
+        isOwner
+            ? quizAttemptRepository.findAttemptGroupsByUserId(author.getId(), null, effective)
+            : quizAttemptRepository.findAttemptGroupsByUserIdAndVisibility(
+                author.getId(), QuizVisibility.PUBLIC, effective);
+    return mapGroupsToListItems(author.getId(), groups, effective);
   }
 
-  private Page<AttemptListItemResponse> mapToListItems(Page<QuizAttempt> page) {
+  /** quiz 단위 그룹 페이지를 받아 각 그룹의 최신 attempt + 누적 횟수 + 썸네일 presign 으로 응답 매핑 (그룹 정렬 순서 보존). */
+  private Page<AttemptListItemResponse> mapGroupsToListItems(
+      Long userId, Page<QuizAttemptRepository.AttemptGroupRow> groups, Pageable effective) {
+    if (groups.isEmpty()) {
+      return Page.empty(effective);
+    }
+
+    List<Long> quizIds = groups.getContent().stream().map(g -> g.getQuizId()).toList();
+    Map<Long, Long> attemptCountByQuizId = new HashMap<>();
+    for (QuizAttemptRepository.AttemptGroupRow g : groups.getContent()) {
+      attemptCountByQuizId.put(g.getQuizId(), g.getAttemptCount());
+    }
+
+    Map<Long, QuizAttempt> latestByQuizId = new HashMap<>();
+    for (QuizAttempt a : quizAttemptRepository.findLatestAttemptsPerQuiz(userId, quizIds)) {
+      latestByQuizId.put(a.getQuiz().getId(), a);
+    }
+
     List<String> keys =
-        page.getContent().stream()
+        latestByQuizId.values().stream()
             .map(a -> a.getQuiz().getThumbnailKey())
             .filter(k -> k != null)
             .toList();
     Map<String, String> presigned = s3Service.batchPresignViewUrls(keys);
-    return page.map(
-        a -> AttemptListItemResponse.from(a, lookupUrl(presigned, a.getQuiz().getThumbnailKey())));
+
+    List<AttemptListItemResponse> items = new ArrayList<>(quizIds.size());
+    for (Long quizId : quizIds) {
+      QuizAttempt latest = latestByQuizId.get(quizId);
+      if (latest == null) {
+        continue; // 동시 삭제 등으로 사라진 경우 방어적 skip
+      }
+      items.add(
+          AttemptListItemResponse.from(
+              latest,
+              lookupUrl(presigned, latest.getQuiz().getThumbnailKey()),
+              attemptCountByQuizId.getOrDefault(quizId, 1L)));
+    }
+    return new PageImpl<>(items, effective, groups.getTotalElements());
+  }
+
+  private static String normalizeTitle(String title) {
+    return (title == null || title.isBlank()) ? null : title.trim();
   }
 
   private static String lookupUrl(Map<String, String> presigned, String key) {

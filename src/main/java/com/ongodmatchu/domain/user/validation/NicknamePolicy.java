@@ -1,23 +1,20 @@
 package com.ongodmatchu.domain.user.validation;
 
-import com.ongodmatchu.domain.user.entity.AdminAccount;
 import com.ongodmatchu.global.exception.BusinessException;
 import com.ongodmatchu.global.exception.ErrorCode;
-import java.util.Set;
 import java.util.regex.Pattern;
 import org.springframework.stereotype.Component;
 
+/**
+ * 닉네임 형식 정책(길이·허용 문자)만 담당. 예약어/금지어 차단은 DB 기반 {@code ForbiddenNicknameService} 로 이관(가입·변경 경로에서 형식 검증
+ * 직후 별도 호출).
+ */
 @Component
 public class NicknamePolicy {
 
   private static final int MIN_LENGTH = 2;
   private static final int MAX_LENGTH = 10;
   private static final Pattern ALLOWED = Pattern.compile("^[가-힣A-Za-z0-9_]+$");
-
-  /**
-   * 사칭 차단용 reserved 닉네임. 표시용 "탈퇴한 사용자"(공백 포함)는 ALLOWED regex 에서 자체 차단되므로, 공백 제거 변형 "탈퇴한사용자"만 별도 등록.
-   */
-  private static final Set<String> RESERVED = Set.of(AdminAccount.NICKNAME, "탈퇴한사용자");
 
   public void enforce(String normalized) {
     if (normalized == null || normalized.isBlank()) {
@@ -31,9 +28,6 @@ public class NicknamePolicy {
     if (!ALLOWED.matcher(normalized).matches()) {
       throw new BusinessException(
           ErrorCode.INVALID_NICKNAME_FORMAT, "닉네임은 한글·영문·숫자·언더스코어(_)만 사용할 수 있습니다.");
-    }
-    if (RESERVED.contains(normalized)) {
-      throw new BusinessException(ErrorCode.INVALID_NICKNAME_FORMAT, "사용할 수 없는 닉네임입니다.");
     }
   }
 

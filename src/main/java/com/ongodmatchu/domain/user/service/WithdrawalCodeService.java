@@ -49,11 +49,31 @@ public class WithdrawalCodeService {
   }
 
   /**
+   * 코드 dry-run 검증. 유효하면 통과만 하고 소비하지 않는다 (탈퇴 확정 전 인증 버튼용). 최종 소비는 {@link #verifyAndConsume} 가 담당. 검증
+   * 직전 시도 횟수 rate limit 으로 6자리 코드 brute-force 를 차단 (초과 시 {@link ErrorCode#RATE_LIMITED}). 미존재/미일치 시
+   * {@link ErrorCode#INVALID_VERIFICATION_CODE}, 만료 시 {@link ErrorCode#VERIFICATION_CODE_EXPIRED}.
+   */
+  @Transactional(readOnly = true)
+  public void verify(Long userId, String code, String ipAddress) {
+    User user =
+        userRepository
+            .findById(userId)
+            .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND));
+    rateLimiter.checkVerifyAttempt(user.getEmail(), ipAddress, PURPOSE);
+    findValidOrThrow(userId, code);
+  }
+
+  /**
    * 코드 검증 + 즉시 소비. 미존재/미일치 시 {@link ErrorCode#INVALID_VERIFICATION_CODE}, 만료 시 {@link
    * ErrorCode#VERIFICATION_CODE_EXPIRED}.
    */
   @Transactional
   public void verifyAndConsume(Long userId, String code) {
+    findValidOrThrow(userId, code).consume();
+  }
+
+  /** 미소비 최신 코드를 찾아 만료/일치 검증 후 엔티티 반환. 실패 시 예외. */
+  private WithdrawalVerification findValidOrThrow(Long userId, String code) {
     WithdrawalVerification v =
         repository
             .findTopByUserIdAndConsumedAtIsNullOrderByCreatedAtDesc(userId)
@@ -64,7 +84,7 @@ public class WithdrawalCodeService {
     if (code == null || !v.getCode().equals(code)) {
       throw new BusinessException(ErrorCode.INVALID_VERIFICATION_CODE);
     }
-    v.consume();
+    return v;
   }
 
   private String generateCode() {
